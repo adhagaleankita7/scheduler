@@ -1,0 +1,58 @@
+
+> linkflow@1.0.0 dev
+> next dev -p 3100
+
+   ▲ Next.js 15.5.29
+   - Local:        http://localhost:3100
+   - Network:      http://10.212.7.112:3100
+
+ ✓ Starting...
+ ✓ Ready in 2.1s
+ ○ Compiling /middleware ...
+ ✓ Compiled /middleware in 729ms (171 modules)
+ ○ Compiling /login ...
+<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (115kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
+<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (272kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
+ ✓ Compiled /login in 4.3s (1406 modules)
+ GET /login 307 in 1693ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 3.3s (2652 modules)
+ GET /login 307 in 55ms
+ GET /dashboard 200 in 139ms
+ ✓ Compiled / in 357ms (2655 modules)
+ GET / 200 in 595ms
+ GET /login 307 in 70ms
+ GET /dashboard 200 in 177ms
+ ✓ Compiled /signup in 446ms (2673 modules)
+ GET /signup 307 in 555ms
+ GET /dashboard 200 in 168ms
+ ○ Compiling /forgot-password ...
+ ✓ Compiled /forgot-password in 537ms (2689 modules)
+ GET /forgot-password 200 in 636ms
+ ✓ Compiled /setup in 449ms (2708 modules)
+ GET /setup 200 in 618ms
+ GET /setup 200 in 82ms
+ GET /dashboard 200 in 175ms
+ ○ Compiling /planner ...
+ ✓ Compiled /planner in 1483ms (3040 modules)
+ GET /planner 200 in 1819ms
+ ○ Compiling /calendar ...
+ ✓ Compiled /calendar in 629ms (3063 modules)
+ GET /calendar 200 in 794ms
+ ○ Compiling /queue ...
+ ✓ Compiled /queue in 691ms (3110 modules)
+ GET /queue 200 in 911ms
+ ○ Compiling /posts ...
+ ✓ Compiled /posts in 555ms (3121 modules)
+ GET /posts 200 in 767ms
+ ○ Compiling /accounts ...
+ ✓ Compiled /accounts in 677ms (3144 modules)
+ GET /accounts 200 in 858ms
+ ○ Compiling /settings ...
+ ✓ Compiled /settings in 663ms (3168 modules)
+ GET /settings 200 in 936ms
+ ○ Compiling /composer ...
+ ✓ Compiled /composer in 1208ms (3310 modules)
+ GET /composer 200 in 1454ms
+ GET /setup 200 in 89ms
+ ✓ Compiled in 209ms (973 modules)

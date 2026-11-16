@@ -1,0 +1,120 @@
+
+> linkflow@1.0.0 dev
+> next dev
+
+   ▲ Next.js 15.5.29
+   - Local:        http://localhost:3000
+   - Network:      http://10.212.7.112:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 2.2s
+ ○ Compiling /middleware ...
+ ✓ Compiled /middleware in 787ms (171 modules)
+ ○ Compiling /api/linkedin/callback ...
+ ✓ Compiled /api/linkedin/callback in 2.7s (393 modules)
+ GET /api/linkedin/callback 307 in 3023ms
+ ○ Compiling /api/linkedin/connect ...
+ ✓ Compiled /api/linkedin/connect in 1850ms (396 modules)
+ GET /api/linkedin/connect 307 in 2205ms
+ ✓ Compiled in 302ms (201 modules)
+ ✓ Compiled in 338ms (201 modules)
+ ✓ Compiled in 190ms (201 modules)
+ ○ Compiling /accounts ...
+ ✓ Compiled /accounts in 6.4s (2694 modules)
+ GET /accounts 200 in 9826ms
+ ⚠ Cross origin request detected from knock-nursery-developmental-worked.trycloudflare.com to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+ ○ Compiling /api/linkedin/connect ...
+ ✓ Compiled /api/linkedin/connect in 722ms (2000 modules)
+ GET /accounts 200 in 251ms
+LinkedIn OAuth started {
+  redirectUri: 'https://knock-nursery-developmental-worked.trycloudflare.com/api/linkedin/callback',
+  clientId: '776a6se4mrvnc0',
+  scopes: 'openid profile email w_member_social'
+}
+ GET /api/linkedin/connect 307 in 3887ms
+ ✓ Compiled /api/linkedin/callback in 475ms (2002 modules)
+LinkedIn token exchange failed {
+  status: 401,
+  error: 'invalid_client',
+  description: 'Client authentication failed',
+  rawBody: null,
+  clientId: '776a6s…(14 chars)',
+  redirectUri: 'https://knock-nursery-developmental-worked.trycloudflare.com/api/linkedin/callback',
+  codeLength: 211,
+  codePrefix: 'AQQx4AKs',
+  verifierLength: 64
+}
+LinkedIn callback failed Error [LinkedInOAuthError]: LinkedIn rejected the app credentials: the Client Secret does not match the Client ID. Open the LinkedIn app → Auth tab, copy the Client ID and the Primary Client Secret from the same app (use the copy icon), update LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET, restart the app, then connect again.
+    at exchangeCodeForToken (src\lib\linkedin\oauth.ts:336:13)
+    at async GET (src\app\api\linkedin\callback\route.ts:90:19)
+  334 |
+  335 |     if (providerCode === "invalid_client" || /client authentication failed/i.test(text)) {
+> 336 |       throw new LinkedInOAuthError(
+      |             ^
+  337 |         "LinkedIn rejected the app credentials: the Client Secret does not match the Client ID. Open the LinkedIn app → Auth tab, copy the Client ID and the Primary Client Secret from the same app (use the copy icon), update LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET, restart the app, then connect again.",
+  338 |         "invalid_client",
+  339 |       ); {
+  code: 'invalid_client'
+}
+ GET /api/linkedin/callback?code=AQQx4AKsiIBbHz8uBBfBRfhEQ_NACoMcCSk6VQqDy-tpzGyi6Hxfm6LQCzSN0_d7PjhP3bMnM2XjjknPG7DlEmStLCMdD0o8ktlLF-hb5YjKcfzxyC9tj2ArWvC4edQPzAXWibIn3Ug8KLMRoOZwkXdDo1WIvMDLhRQVXAgAneII1KjoOlyPEan_f3XbepZ1R2XN61y5fFDNubvjpIQ&state=tPc2rsTi3Aox7eXX41rCIkIt8E5H0WiI 307 in 3033ms
+ GET /accounts?error=LinkedIn%20rejected%20the%20app%20credentials%3A%20the%20Client%20Secret%20does%20not%20match%20the%20Client%20ID.%20Open%20the%20LinkedIn%20app%20%E2%86%92%20Auth%20tab%2C%20copy%20the%20Client%20ID%20and%20the%20Primary%20Client%20Secret%20from%20the%20same%20app%20(use%20the%20copy%20icon)%2C%20update%20LINKEDIN_CLIENT_ID%20and%20LINKEDIN_CLIENT_SECRET%2C%20restart%20the%20app%2C%20then%20connect%20again. 200 in 1422ms
+ ✓ Compiled in 2.2s (2694 modules)
+ ✓ Compiled in 1814ms (2694 modules)
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 752ms
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 124ms
+ ✓ Compiled in 1040ms (2694 modules)
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 280ms
+ ✓ Compiled in 891ms (2694 modules)
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 266ms
+ ✓ Compiled in 616ms (712 modules)
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 189ms
+ ✓ Compiled in 481ms (712 modules)
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 127ms
+ ✓ Compiled in 612ms (712 modules)
+ ✓ Compiled in 478ms (712 modules)
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 140ms
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 136ms
+ ✓ Compiled in 535ms (712 modules)
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 157ms
+ ✓ Compiled in 729ms (712 modules)
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 130ms
+ ✓ Compiled in 642ms (712 modules)
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 238ms
+ ✓ Compiled in 740ms (712 modules)
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 127ms
+ ✓ Compiled in 947ms (2694 modules)
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 599ms
+ ○ Compiling /api/linkedin/callback ...
+ ✓ Compiled /api/linkedin/callback in 1246ms (2000 modules)
+ GET /api/linkedin/callback 307 in 1585ms
+ GET /accounts?error=LinkedIn+rejected+the+app+credentials%3A+the+Client+Secret+does+not+match+the+Client+ID.+Open+the+LinkedIn+app+%E2%86%92+Auth+tab%2C+copy+the+Client+ID+and+the+Primary+Client+Secret+from+the+same+app+%28use+the+copy+icon%29%2C+update+LINKEDIN_CLIENT_ID+and+LINKEDIN_CLIENT_SECRET%2C+restart+the+app%2C+then+connect+again. 200 in 306ms
+ GET /accounts 200 in 2348ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /api/linkedin/connect in 3s (2699 modules)
+ GET /favicon.svg 404 in 3884ms
+ GET /accounts 200 in 308ms
+LinkedIn OAuth started {
+  redirectUri: 'https://knock-nursery-developmental-worked.trycloudflare.com/api/linkedin/callback',
+  clientId: '776a6se4mrvnc0',
+  scopes: 'openid profile email w_member_social'
+}
+ GET /api/linkedin/connect 307 in 5017ms
+ ✓ Compiled /api/linkedin/callback in 456ms (2003 modules)
+ GET /api/linkedin/callback?code=AQRK5n9yFJmEbPCFSPGdJ79tSPaxI8Vm8GVSQ49BJhHVnuYfja654FhD5jPb2npRH0lZDzduV_gBCMvFvpKyPJVrcLY4gkuFUDJt2J3X_9sqYZs2RQHFOEZ_P9RnOZNh54deMZ_e3f98pPxNyc0jQFXS2QpFQLYIFx3AECo_DNpsniGiuxDpOzT7ncw54_Pm5CeH8uXq-AG4RNJzs4U&state=-gywcB0AcLNr-vFVmz14__F3dPaK2A8u 307 in 4503ms
+ GET /accounts?connected=1&notice=Company+pages+were+not+imported+because+the+LinkedIn+app+has+not+been+approved+for+organization+admin+access. 200 in 1569ms
+LinkedIn OAuth started {
+  redirectUri: 'https://knock-nursery-developmental-worked.trycloudflare.com/api/linkedin/callback',
+  clientId: '776a6se4mrvnc0',
+  scopes: 'openid profile email w_member_social'
+}
+ GET /api/linkedin/connect 307 in 2538ms
+ GET /api/linkedin/callback?code=AQSIFEbzgOMLpEhUjm5KizGroZJjnQzIqqiBSMaG7vE_qPqwu61P5KyDTYd5PFFx5oXUXF4Ykkex12m8OadLh2fY-6P00rv2ZGfkhzTBVUzspK0gfqxOhl0WoN6-g2Paro8nP4tM8WjelJcGB_rE1-e8J-8XGcLGn4KZYoo4ziRj2tZ-OwQg53vnw_DKYvkqqdS7D_Kz-jct-zpNx7w&state=x7titCT3qIzGL730m0Tp5K87xXTHlhKz 307 in 2659ms
+ GET /accounts?connected=1&notice=Company+pages+were+not+imported+because+the+LinkedIn+app+has+not+been+approved+for+organization+admin+access. 200 in 1423ms
+ ○ Compiling /composer ...
+ ✓ Compiled /composer in 5.2s (3081 modules)
+ ✓ Compiled in 1117ms (900 modules)
+ GET /composer 200 in 83ms
+ GET /composer 200 in 56ms
+ GET /composer 200 in 8192ms
