@@ -58,8 +58,8 @@ export function DisconnectAccountButton({
             <DialogTitle>Disconnect {accountName}?</DialogTitle>
             <DialogDescription>
               LINKFLOW will delete the OAuth tokens from Supabase Vault and remove this account and
-              its company pages. Scheduled posts stay in your workspace but cannot publish until you
-              reconnect a LinkedIn target.
+              its pages. Scheduled posts stay in your workspace but cannot publish until you
+              reconnect a target.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

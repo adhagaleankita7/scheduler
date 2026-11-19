@@ -6,6 +6,7 @@ import {
   Circle,
   Database,
   ExternalLink,
+  Facebook,
   FlaskConical,
   FunctionSquare,
   KeyRound,
@@ -25,10 +26,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import {
   getAppUrl,
   getCronSecret,
+  getFacebookScopes,
   getLinkedInScopes,
   getSupabasePublicKey,
   getSupabaseUrl,
   isDemoMode,
+  isFacebookConfigured,
+  isFacebookMockMode,
   isLinkedInConfigured,
   isLinkedInMockMode,
   isServiceRoleConfigured,
@@ -38,6 +42,7 @@ import {
   getLinkedInRedirectUri,
   isSecureRedirectUri,
 } from "@/lib/linkedin/oauth";
+import { getFacebookRedirectUri } from "@/lib/facebook/oauth";
 import {
   hasOrganizationAdminScope,
   hasOrganizationPublishScope,
@@ -154,11 +159,14 @@ export default async function SetupPage() {
   const schemaReady = supabaseReady ? await checkDatabaseSchema() : null;
   const serviceReady = isServiceRoleConfigured();
   const linkedinReady = isLinkedInConfigured();
+  const facebookReady = isFacebookConfigured();
   const cronReady = Boolean(getCronSecret());
   const appUrl = getAppUrl();
   const redirectUri = getLinkedInRedirectUri(appUrl);
   const secureRedirect = isSecureRedirectUri(redirectUri);
   const mock = isLinkedInMockMode();
+  const facebookMock = isFacebookMockMode();
+  const facebookRedirectUri = getFacebookRedirectUri(appUrl);
   const demo = isDemoMode();
   const requestedOrgScopes = splitRequestedScopes(
     getLinkedInScopes().split(/[\s,]+/).filter(Boolean),
@@ -183,9 +191,18 @@ LINKEDIN_API_VERSION=202610
 # Optional: HTTPS tunnel callback while NEXT_PUBLIC_APP_URL stays localhost.
 # LINKEDIN_REDIRECT_URI=https://<tunnel-host>/api/linkedin/callback
 
-# Development only. Never enable either of these in production.
+# Facebook Pages (optional). Meta can only post to Pages, not personal profiles.
+FACEBOOK_APP_ID=<facebook-app-id>
+FACEBOOK_APP_SECRET=<facebook-app-secret>
+FACEBOOK_SCOPES=${getFacebookScopes()}
+FACEBOOK_GRAPH_VERSION=v23.0
+# Optional: must match Meta → Facebook Login → Valid OAuth Redirect URIs.
+# FACEBOOK_REDIRECT_URI=${facebookRedirectUri}
+
+# Development only. Never enable any of these in production.
 LINKFLOW_DEMO_MODE=0
 LINKEDIN_MOCK_MODE=false
+FACEBOOK_MOCK_MODE=false
 
 CRON_SECRET=<long-random-string>`;
 
@@ -220,8 +237,8 @@ CRON_SECRET=<long-random-string>`;
           </h1>
           <p className="text-muted-foreground mt-2 max-w-2xl text-[13px] leading-relaxed">
             LINKFLOW runs on Next.js, Supabase (Auth, Postgres, Storage, Vault, Edge Functions) and the
-            official LinkedIn API. Follow these steps once, verify the workflow in mock mode, then flip
-            the switch to real publishing.
+            official LinkedIn and Facebook APIs. Follow these steps once, verify the workflow in mock
+            mode, then flip the switch to real publishing.
           </p>
         </div>
 
@@ -275,8 +292,19 @@ CRON_SECRET=<long-random-string>`;
               }
             />
             <Readiness label="Cron shared secret" ready={cronReady} detail="CRON_SECRET, also stored in Vault as linkflow_cron_secret" />
+            <Readiness
+              label="Facebook OAuth app"
+              ready={facebookReady}
+              detail={
+                facebookReady
+                  ? facebookRedirectUri
+                  : "Optional — add FACEBOOK_APP_ID + FACEBOOK_APP_SECRET to publish to Facebook Pages."
+              }
+              optional
+            />
             <Readiness label="Demo fixtures" ready={demo} detail="LINKFLOW_DEMO_MODE=1 (development only)" optional />
             <Readiness label="Mock publishing" ready={mock} detail="LINKEDIN_MOCK_MODE=true (never with LINKFLOW_ENV=production)" optional />
+            <Readiness label="Mock Facebook" ready={facebookMock} detail="FACEBOOK_MOCK_MODE=true (never with LINKFLOW_ENV=production)" optional />
           </CardContent>
           {!supabaseReady && (
             <CardContent className="pt-0">
@@ -504,6 +532,59 @@ select public.trigger_publish_function();`}
 
           <Step
             number={7}
+            icon={Facebook}
+            title="Create the Meta app for Facebook Pages"
+            description="Optional. Meta only allows API posting to Pages, never personal profiles."
+          >
+            <ul className="text-muted-foreground space-y-1.5 text-[11.5px]">
+              <li>
+                • Create an app at developers.facebook.com and add the{" "}
+                <strong>Facebook Login</strong> product.
+              </li>
+              <li>
+                • Add the valid OAuth redirect URI{" "}
+                <code className="rounded bg-muted px-1">{facebookRedirectUri}</code> under Facebook
+                Login → Settings.
+              </li>
+              <li>
+                • Request <strong>pages_manage_posts</strong> and complete App Review + business
+                verification to publish for users outside your app’s testers. Development mode only
+                works for admins, developers and testers.
+              </li>
+              <li>
+                • The Facebook user needs an <strong>Admin</strong> or <strong>Editor</strong> role on
+                a Page (or Business Manager access). LINKFLOW lists Pages without content-creation
+                rights as read-only.
+              </li>
+              <li>
+                • Requested scopes:{" "}
+                <code className="rounded bg-muted px-1">{getFacebookScopes()}</code>.
+              </li>
+              <li>
+                • Full checklist:{" "}
+                <code className="rounded bg-muted px-1">docs/FACEBOOK_SETUP.md</code>.
+              </li>
+            </ul>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button asChild variant="outline" size="sm">
+                <a href="https://developers.facebook.com/apps" target="_blank" rel="noreferrer">
+                  Meta developer portal <ExternalLink className="size-3.5" />
+                </a>
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <a
+                  href="https://developers.facebook.com/docs/pages-api/posts"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Pages API <ExternalLink className="size-3.5" />
+                </a>
+              </Button>
+            </div>
+          </Step>
+
+          <Step
+            number={8}
             icon={FlaskConical}
             title="Verify the workflow before going live"
             description="Prove the whole pipeline with mock publishing, then switch to real tokens."
@@ -512,8 +593,8 @@ select public.trigger_publish_function();`}
               code={`# 1. Read-only UI tour without any credentials
 LINKFLOW_DEMO_MODE=1 npm run dev
 
-# 2. Full workflow with real Supabase, simulated LinkedIn
-LINKEDIN_MOCK_MODE=true npm run dev
+# 2. Full workflow with real Supabase, simulated publishing
+LINKEDIN_MOCK_MODE=true FACEBOOK_MOCK_MODE=true npm run dev
 
 # 3. Quality gates
 npm run typecheck
@@ -525,19 +606,20 @@ npm run build
 npm run verify:workflow`}
             />
             <p className="text-muted-foreground mt-3 text-[11.5px] leading-relaxed">
-              With mock mode on and no LinkedIn client credentials,{" "}
+              With mock mode on and no provider credentials,{" "}
               <code className="rounded bg-muted px-1">/accounts</code> offers{" "}
-              <strong>Connect mock LinkedIn</strong> so you can test scheduling, the queue, and the
-              every-minute publisher without a LinkedIn app. Mock posts are stored with{" "}
-              <code className="rounded bg-muted px-1">is_mock = true</code> and a mock provider ID,
-              and the UI labels them clearly. Disable{" "}
-              <code className="rounded bg-muted px-1">LINKEDIN_MOCK_MODE</code> only after you have an
-              approved LinkedIn app and real OAuth tokens.
+              <strong>Connect mock LinkedIn</strong> and <strong>Connect mock Facebook</strong> so you
+              can test scheduling, the queue, and the every-minute publisher without real apps. Mock
+              posts are stored with <code className="rounded bg-muted px-1">is_mock = true</code> and a
+              mock provider ID, and the UI labels them clearly. Disable{" "}
+              <code className="rounded bg-muted px-1">LINKEDIN_MOCK_MODE</code> /{" "}
+              <code className="rounded bg-muted px-1">FACEBOOK_MOCK_MODE</code> only after you have
+              approved apps and real OAuth tokens.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button asChild variant="gradient" size="sm">
                 <Link href="/accounts">
-                  <Rocket className="size-3.5" /> Connect LinkedIn
+                  <Rocket className="size-3.5" /> Connect accounts
                 </Link>
               </Button>
               <Button asChild variant="outline" size="sm">

@@ -9,9 +9,12 @@ import {
   Copy,
   ExternalLink,
   Loader2,
+  MessageCircle,
   MoreHorizontal,
   Pencil,
   RotateCcw,
+  Share2,
+  ThumbsUp,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -46,10 +49,11 @@ import {
 } from "@/lib/actions/posts";
 import { toZonedInputValue, zonedInputToIso } from "@/lib/scheduling/timezone";
 import type { PostWithRelations } from "@/lib/types";
-import { cn, initials, truncate } from "@/lib/utils";
+import { cn, formatNumber, initials, truncate } from "@/lib/utils";
 
 function TargetLine({ post }: { post: PostWithRelations }) {
   const isOrg = post.target_type === "organization";
+  const isFacebook = post.account?.provider === "facebook";
   const name = isOrg ? post.page?.name : post.account?.display_name;
   const avatar = isOrg ? post.page?.logo_url : post.account?.avatar_url;
   return (
@@ -59,18 +63,23 @@ function TargetLine({ post }: { post: PostWithRelations }) {
         <AvatarFallback
           className={cn(
             "rounded-md text-[9px] font-bold",
-            isOrg ? "bg-violet-500/15 text-violet-600 dark:text-violet-300" : "brand-gradient text-white",
+            isFacebook
+              ? "bg-[#1877f2] text-white"
+              : isOrg
+                ? "bg-violet-500/15 text-violet-600 dark:text-violet-300"
+                : "brand-gradient text-white",
           )}
         >
-          {isOrg ? "in" : initials(name)}
+          {isFacebook ? "f" : isOrg ? "in" : initials(name)}
         </AvatarFallback>
       </Avatar>
-      <span className="truncate text-[11.5px] font-medium">{name ?? "LinkedIn target"}</span>
-      {isOrg && (
-        <Badge variant="violet" className="shrink-0 px-1.5 py-0 text-[9px]">
-          Page
-        </Badge>
-      )}
+      <span className="truncate text-[11.5px] font-medium">{name ?? "Publishing target"}</span>
+      <Badge
+        variant={isFacebook ? "default" : "violet"}
+        className="shrink-0 px-1.5 py-0 text-[9px]"
+      >
+        {isFacebook ? "Facebook" : "Page"}
+      </Badge>
     </div>
   );
 }
@@ -128,10 +137,11 @@ export function PostCard({
   }
 
   const scheduleLabel = post.published_at
-    ? "Published"
+    ? "Posted"
     : post.scheduled_for
       ? "Scheduled for"
       : "Created";
+  const providerLabel = post.account?.provider === "facebook" ? "Facebook" : "LinkedIn";
 
   return (
     <article
@@ -189,7 +199,7 @@ export function PostCard({
               {post.provider_post_url && (
                 <DropdownMenuItem asChild>
                   <a href={post.provider_post_url} target="_blank" rel="noreferrer">
-                    <ExternalLink /> View on LinkedIn
+                    <ExternalLink /> View post
                   </a>
                 </DropdownMenuItem>
               )}
@@ -236,6 +246,40 @@ export function PostCard({
             className="font-medium text-foreground/80"
           />
         </span>
+        {post.status === "published" && (
+          <>
+            <span
+              className="inline-flex items-center gap-1 tabular-nums"
+              title={`${post.like_count} like${post.like_count === 1 ? "" : "s"} · updated every ~15 minutes`}
+            >
+              <ThumbsUp className="size-3" /> {formatNumber(post.like_count)}
+            </span>
+            <span
+              className="inline-flex items-center gap-1 tabular-nums"
+              title={`${post.comment_count} comment${post.comment_count === 1 ? "" : "s"} · updated every ~15 minutes`}
+            >
+              <MessageCircle className="size-3" /> {formatNumber(post.comment_count)}
+            </span>
+            {post.share_count > 0 && (
+              <span
+                className="inline-flex items-center gap-1 tabular-nums"
+                title={`${post.share_count} share${post.share_count === 1 ? "" : "s"}`}
+              >
+                <Share2 className="size-3" /> {formatNumber(post.share_count)}
+              </span>
+            )}
+            {post.provider_post_url && (
+              <a
+                href={post.provider_post_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary inline-flex items-center gap-1 font-semibold hover:underline"
+              >
+                View on {providerLabel} <ExternalLink className="size-3" />
+              </a>
+            )}
+          </>
+        )}
         {post.status === "failed" && post.attempt_count > 0 && (
           <span className="text-destructive/90">
             {post.attempt_count}/{post.max_attempts} attempts
@@ -286,8 +330,8 @@ export function PostCard({
           <DialogHeader>
             <DialogTitle>Delete this post?</DialogTitle>
             <DialogDescription>
-              This permanently removes the post and its attached image from your workspace. Published
-              posts on LinkedIn are not affected.
+              This permanently removes the post and its attached image from your workspace. Posts
+              already published to LinkedIn or Facebook are not affected.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

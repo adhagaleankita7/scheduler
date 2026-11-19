@@ -18,15 +18,15 @@ export async function disconnectAccount(accountId: string): Promise<ActionResult
     .from("social_accounts")
     .select("id, display_name")
     .eq("id", accountId)
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", session.workspace.id)
     .maybeSingle();
 
-  if (!account) return { ok: false, error: "That LinkedIn account could not be found." };
+  if (!account) return { ok: false, error: "That social account could not be found." };
   if (!isServiceRoleConfigured()) {
     return {
       ok: false,
       error:
-        "Disconnecting needs SUPABASE_SERVICE_ROLE_KEY on the server so stored LinkedIn tokens can be deleted from Vault. Add it to the hosting environment and try again.",
+        "Disconnecting needs SUPABASE_SERVICE_ROLE_KEY on the server so stored tokens can be deleted from Vault. Add it to the hosting environment and try again.",
     };
   }
 
@@ -40,7 +40,7 @@ export async function disconnectAccount(accountId: string): Promise<ActionResult
   if (tokenError) {
     return {
       ok: false,
-      error: `Could not remove stored LinkedIn credentials: ${tokenError.message}`,
+      error: `Could not remove stored credentials: ${tokenError.message}`,
     };
   }
 
@@ -48,7 +48,7 @@ export async function disconnectAccount(accountId: string): Promise<ActionResult
     .from("social_accounts")
     .delete()
     .eq("id", accountId)
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", session.workspace.id)
     .select("id");
 
   if (error) {
@@ -57,10 +57,10 @@ export async function disconnectAccount(accountId: string): Promise<ActionResult
       .from("social_accounts")
       .update({
         status: "needs_reconnect",
-        last_error: "Disconnect did not finish. Reconnect LinkedIn to restore publishing.",
+        last_error: "Disconnect did not finish. Reconnect this account to restore publishing.",
       })
       .eq("id", accountId)
-      .eq("user_id", session.user.id);
+      .eq("workspace_id", session.workspace.id);
     return { ok: false, error: `Could not disconnect: ${error.message}` };
   }
 

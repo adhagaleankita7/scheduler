@@ -282,6 +282,24 @@ describe("probeAuthorizationRequest", () => {
     });
   });
 
+  it("detects LinkedIn's unauthorized_scope_error page (Bummer) as a scope rejection", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            '<html><body>Bummer, something went wrong. In five seconds, you will be redirected to: <a href="https://example.com/api/linkedin/callback?error=unauthorized_scope_error&amp;error_description=Scope+not+authorized">example.com</a></body></html>',
+            { status: 200 },
+          ),
+      ),
+    );
+    await expect(probeAuthorizationRequest()).resolves.toMatchObject({
+      ok: false,
+      code: "invalid_scope",
+      blocking: true,
+    });
+  });
+
   it("does not block connecting when the probe itself cannot reach LinkedIn", async () => {
     vi.stubGlobal(
       "fetch",

@@ -8,10 +8,12 @@
  *   SUPABASE_ACCESS_TOKEN
  *   NEXT_PUBLIC_SUPABASE_URL
  *   CRON_SECRET
- *   LINKEDIN_CLIENT_ID
- *   LINKEDIN_CLIENT_SECRET
+ *   LINKEDIN_CLIENT_ID        (or FACEBOOK_APP_ID)
+ *   LINKEDIN_CLIENT_SECRET    (or FACEBOOK_APP_SECRET)
  * Optional:
  *   LINKEDIN_API_VERSION (default 202610)
+ *   FACEBOOK_APP_ID / FACEBOOK_APP_SECRET (required for Facebook Pages)
+ *   FACEBOOK_GRAPH_VERSION (default v23.0)
  *   LINKFLOW_ENV (default production)
  *
  * It does three things:
@@ -95,6 +97,9 @@ const cronSecret = process.env.CRON_SECRET?.trim();
 const clientId = process.env.LINKEDIN_CLIENT_ID?.trim();
 const clientSecret = process.env.LINKEDIN_CLIENT_SECRET?.trim();
 const apiVersion = process.env.LINKEDIN_API_VERSION?.trim() || "202610";
+const facebookAppId = process.env.FACEBOOK_APP_ID?.trim();
+const facebookAppSecret = process.env.FACEBOOK_APP_SECRET?.trim();
+const facebookGraphVersion = process.env.FACEBOOK_GRAPH_VERSION?.trim() || "v23.0";
 const linkflowEnv = process.env.LINKFLOW_ENV?.trim() || "production";
 
 if (!token) {
@@ -105,8 +110,16 @@ if (!token) {
 }
 if (!supabaseUrl) fail("NEXT_PUBLIC_SUPABASE_URL is not set.");
 if (!cronSecret) fail("CRON_SECRET is not set. Generate one with `openssl rand -hex 32`.");
-if (!clientId) fail("LINKEDIN_CLIENT_ID is not set.");
-if (!clientSecret) fail("LINKEDIN_CLIENT_SECRET is not set.");
+if (!clientId && !facebookAppId) {
+  fail(
+    "Configure at least one provider: LINKEDIN_CLIENT_ID + LINKEDIN_CLIENT_SECRET, " +
+      "or FACEBOOK_APP_ID + FACEBOOK_APP_SECRET.",
+  );
+}
+if (clientId && !clientSecret) fail("LINKEDIN_CLIENT_SECRET is not set.");
+if (clientSecret && !clientId) fail("LINKEDIN_CLIENT_ID is not set.");
+if (facebookAppId && !facebookAppSecret) fail("FACEBOOK_APP_SECRET is not set.");
+if (facebookAppSecret && !facebookAppId) fail("FACEBOOK_APP_ID is not set.");
 
 const ref = supabaseUrl.match(/^https:\/\/([a-z0-9]+)\.supabase\.co\/?$/i)?.[1];
 if (!ref) fail("Could not read a project ref from NEXT_PUBLIC_SUPABASE_URL.");
@@ -124,10 +137,21 @@ execFileSync(process.execPath, [join(root, "scripts", "apply-migrations.mjs")], 
 console.log("\nStep 2/3 · Setting Edge Function secrets");
 const secrets = [
   { name: "CRON_SECRET", value: cronSecret },
-  { name: "LINKEDIN_CLIENT_ID", value: clientId },
-  { name: "LINKEDIN_CLIENT_SECRET", value: clientSecret },
-  { name: "LINKEDIN_API_VERSION", value: apiVersion },
   { name: "LINKFLOW_ENV", value: linkflowEnv },
+  ...(clientId && clientSecret
+    ? [
+        { name: "LINKEDIN_CLIENT_ID", value: clientId },
+        { name: "LINKEDIN_CLIENT_SECRET", value: clientSecret },
+        { name: "LINKEDIN_API_VERSION", value: apiVersion },
+      ]
+    : []),
+  ...(facebookAppId && facebookAppSecret
+    ? [
+        { name: "FACEBOOK_APP_ID", value: facebookAppId },
+        { name: "FACEBOOK_APP_SECRET", value: facebookAppSecret },
+        { name: "FACEBOOK_GRAPH_VERSION", value: facebookGraphVersion },
+      ]
+    : []),
 ];
 
 const secretResponse = await fetch(`${apiBase}/projects/${ref}/secrets`, {

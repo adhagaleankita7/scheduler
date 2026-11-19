@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildDayPlan,
   buildSevenDayPlan,
   buildWeekSchedule,
   nextQueueSlots,
@@ -174,6 +175,33 @@ describe("weekly plan helpers", () => {
     expect(entries).toHaveLength(7);
     expect(entries[0].content).toBe("one");
     expect(entries[6].content).toBe("");
+  });
+
+  it("builds a 30-day plan with one entry per day", () => {
+    const entries = buildDayPlan({
+      startDate: "2026-01-12",
+      timeZone: KOLKATA,
+      time: "10:00",
+      days: 30,
+      contents: ["first"],
+    });
+
+    expect(entries).toHaveLength(30);
+    expect(entries[0]).toEqual({ dateKey: "2026-01-12", time: "10:00", content: "first" });
+    expect(entries[29].dateKey).toBe("2026-02-10");
+    expect(entries[29].content).toBe("");
+  });
+
+  it("caps oversized plans at 30 days", () => {
+    const entries = buildDayPlan({
+      startDate: "2026-01-12",
+      timeZone: KOLKATA,
+      time: "10:00",
+      days: 90,
+      contents: [],
+    });
+
+    expect(entries).toHaveLength(30);
   });
 
   it("converts each week row to the exact same local wall-clock time", () => {

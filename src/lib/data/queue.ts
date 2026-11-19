@@ -63,20 +63,20 @@ export async function getQueueData(): Promise<QueueData> {
   }
 
   const supabase = await createClient();
-  const userId = session.user.id;
+  const workspaceId = session.workspace.id;
 
   const [settingsResult, scheduledResult, draftsResult] = await Promise.all([
-    supabase.from("queue_settings").select("*").eq("user_id", userId).maybeSingle(),
+    supabase.from("queue_settings").select("*").eq("workspace_id", workspaceId).maybeSingle(),
     supabase
       .from("posts")
       .select("*")
-      .eq("user_id", userId)
+      .eq("workspace_id", workspaceId)
       .eq("status", "scheduled")
       .order("scheduled_for", { ascending: true }),
     supabase
       .from("posts")
       .select("*")
-      .eq("user_id", userId)
+      .eq("workspace_id", workspaceId)
       .eq("status", "draft")
       .order("created_at", { ascending: false })
       .limit(20),
@@ -84,7 +84,8 @@ export async function getQueueData(): Promise<QueueData> {
 
   const settings =
     (settingsResult.data as QueueSettings | null) ?? {
-      user_id: userId,
+      workspace_id: workspaceId,
+      user_id: session.user.id,
       timezone: session.profile.timezone,
       posting_days: session.profile.default_posting_days,
       posting_times: [session.profile.default_posting_time],

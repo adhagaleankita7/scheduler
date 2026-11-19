@@ -63,11 +63,15 @@ describe("organization scope fallback", () => {
 
   it("retries only when LinkedIn rejected scopes and org scopes were requested", () => {
     expect(shouldRetryWithoutOrganizationScopes(requested, "invalid_scope")).toBe(true);
+    expect(shouldRetryWithoutOrganizationScopes(requested, "unauthorized_scope_error")).toBe(true);
     expect(shouldRetryWithoutOrganizationScopes(requested, "redirect_uri_mismatch")).toBe(false);
     expect(shouldRetryWithoutOrganizationScopes(requested, null)).toBe(false);
     // The fallback attempt itself must not loop.
     expect(shouldRetryWithoutOrganizationScopes(personalOnlyScopes(requested), "invalid_scope")).toBe(
       false,
     );
+    expect(
+      shouldRetryWithoutOrganizationScopes(personalOnlyScopes(requested), "unauthorized_scope_error"),
+    ).toBe(false);
   });
 });

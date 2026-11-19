@@ -46,10 +46,57 @@ export function isLinkedInConfigured() {
   );
 }
 
+export function isFacebookConfigured() {
+  return Boolean(
+    process.env.FACEBOOK_APP_ID?.trim() &&
+      process.env.FACEBOOK_APP_SECRET?.trim(),
+  );
+}
+
+/**
+ * Scopes requested from Facebook. Posting to a Page requires pages_manage_posts;
+ * the other two are needed to list the member's Pages and read engagement.
+ */
+export function getFacebookScopes() {
+  return (
+    process.env.FACEBOOK_SCOPES?.trim() ||
+    "public_profile pages_show_list pages_read_engagement pages_manage_posts"
+  );
+}
+
+export function getFacebookScopeList() {
+  return getFacebookScopes()
+    .split(/[\s,]+/)
+    .map((scope) => scope.trim())
+    .filter(Boolean);
+}
+
+export function getFacebookGraphVersion() {
+  return process.env.FACEBOOK_GRAPH_VERSION?.trim() || "v23.0";
+}
+
+/**
+ * "Facebook Login for Business" replaces the scope parameter with a
+ * configuration id. Meta's new app-creation flow only offers that product, so
+ * when a config id is present we send it instead of the legacy scope list.
+ * Apps that still have classic Facebook Login keep working with FACEBOOK_SCOPES.
+ */
+export function getFacebookLoginConfigId() {
+  return process.env.FACEBOOK_LOGIN_CONFIG_ID?.trim() || null;
+}
+
 /** Mock publishing is always opt-in and can never be enabled in production builds. */
 export function isLinkedInMockMode() {
   return (
     process.env.LINKEDIN_MOCK_MODE === "true" &&
+    process.env.NEXT_PUBLIC_VERCEL_ENV !== "production" &&
+    process.env.NODE_ENV !== "production"
+  );
+}
+
+export function isFacebookMockMode() {
+  return (
+    process.env.FACEBOOK_MOCK_MODE === "true" &&
     process.env.NEXT_PUBLIC_VERCEL_ENV !== "production" &&
     process.env.NODE_ENV !== "production"
   );
@@ -68,7 +115,12 @@ export function getAppUrl() {
   // (or localhost) whenever the configured value is blank.
   const configured = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");
   if (configured) return configured;
-  const vercelUrl = process.env.VERCEL_URL?.trim();
+  // Prefer the stable production domain: VERCEL_URL is unique per deployment,
+  // so using it as the OAuth fallback makes every redeploy require a new
+  // LinkedIn redirect URL.
+  const vercelUrl =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ??
+    process.env.VERCEL_URL?.trim();
   if (vercelUrl) return `https://${vercelUrl.replace(/\/$/, "")}`;
   return "http://localhost:3000";
 }

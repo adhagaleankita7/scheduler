@@ -78,7 +78,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Run on the LinkedIn callback too: it needs the user's Supabase session
+    // Run on the OAuth callbacks too: they need the user's Supabase session
     // (and a refreshed session cookie) to bind the OAuth state to the member.
     "/((?!_next/static|_next/image|favicon.ico|favicon.svg|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map)$).*)",
   ],

@@ -44,9 +44,9 @@ export function SignupForm() {
     <div>
       <div className="mb-7">
         <p className="text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">Start free</p>
-        <h1 className="font-display mt-2 text-[28px] font-bold tracking-[-0.035em]">Plan your first week</h1>
+        <h1 className="font-display mt-2 text-[28px] font-bold tracking-[-0.035em]">Plan your first month</h1>
         <p className="text-muted-foreground mt-2 text-[12.5px] leading-relaxed">
-          Seven posts, one sitting. No credit card required.
+          Thirty posts, one sitting. No credit card required.
         </p>
       </div>
 

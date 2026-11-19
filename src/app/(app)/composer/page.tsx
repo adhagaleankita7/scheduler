@@ -60,7 +60,7 @@ export default async function ComposerPage({
         description={
           editing
             ? "Update the content or move it to a different slot. The publishing engine will use the new schedule."
-            : "Draft it once, preview it exactly as LinkedIn will show it, then schedule it for the right moment."
+            : "Draft it once, preview it exactly as it will appear on LinkedIn or Facebook, then schedule it for the right moment."
         }
       />
       <Composer

@@ -4,8 +4,8 @@
  * Proves the deterministic parts of the product end-to-end without touching
  * LinkedIn or a database:
  *
- *   1. Seven consecutive days are scheduled at the same wall-clock time and
- *      stored as correct UTC instants (including across a DST change).
+ *   1. Seven- and thirty-day plans are scheduled at the same wall-clock time
+ *      and stored as correct UTC instants (including across a DST change).
  *   2. Calendar windows are Monday-based and use exclusive range ends.
  *   3. Every LinkedIn error class maps to the documented retry decision.
  *   4. Backoff follows min(2^(n-1) x 60s, 1h).
@@ -22,6 +22,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  buildDayPlan,
   buildWeekSchedule,
   nextQueueSlots,
 } from "../src/lib/scheduling/slots";
@@ -138,6 +139,22 @@ check("scheduling", "Seven consecutive days at 10:00 Asia/Kolkata", () => {
 
   equal(week[0].iso, "2026-01-12T04:30:00.000Z", "Kolkata UTC offset");
   return "7 posts, all 10:00 local, 04:30Z stored";
+});
+
+check("scheduling", "Thirty consecutive days at 10:00 Asia/Kolkata", () => {
+  const plan = buildDayPlan({
+    startDate: "2026-01-12", // Monday
+    timeZone: KOLKATA,
+    time: "10:00",
+    days: 30,
+    contents: ["Day 1"],
+  });
+
+  equal(plan.length, 30, "entry count");
+  equal(plan[0].dateKey, "2026-01-12", "first date");
+  equal(plan[29].dateKey, "2026-02-10", "last date");
+  equal(plan[29].content, "", "empty days are preserved");
+  return "30 consecutive days at one wall-clock time";
 });
 
 check("scheduling", "Wall-clock time survives the US spring-forward", () => {

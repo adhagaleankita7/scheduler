@@ -53,18 +53,18 @@ export async function addToQueue(input: {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the post content." };
   }
   const { accountId, pageId } = decodeTarget(parsed.data.target);
-  const target = await resolveTarget(session.user.id, accountId, pageId);
+  const target = await resolveTarget(session.workspace.id, accountId, pageId);
   if (!target.ok) return { ok: false, error: target.error };
 
   const supabase = await createClient();
-  const userId = session.user.id;
+  const workspaceId = session.workspace.id;
 
   const [settingsResult, scheduledResult, positionResult] = await Promise.all([
-    supabase.from("queue_settings").select("*").eq("user_id", userId).maybeSingle(),
+    supabase.from("queue_settings").select("*").eq("workspace_id", workspaceId).maybeSingle(),
     supabase
       .from("posts")
       .select("scheduled_for")
-      .eq("user_id", userId)
+      .eq("workspace_id", workspaceId)
       .eq("status", "scheduled")
       .not("scheduled_for", "is", null)
       .order("scheduled_for", { ascending: false })
@@ -72,17 +72,22 @@ export async function addToQueue(input: {
     supabase
       .from("posts")
       .select("queue_position")
-      .eq("user_id", userId)
+      .eq("workspace_id", workspaceId)
       .not("queue_position", "is", null)
       .order("queue_position", { ascending: false })
       .limit(1),
   ]);
 
   const settings = (settingsResult.data as QueueSettings | null) ?? {
+    workspace_id: workspaceId,
+    user_id: session.user.id,
     timezone: session.profile.timezone,
     posting_days: session.profile.default_posting_days,
     posting_times: [session.profile.default_posting_time],
     is_paused: false,
+    last_assigned_at: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
 
   if (settings.is_paused) {
@@ -114,7 +119,8 @@ export async function addToQueue(input: {
   const { data: created, error } = await supabase
     .from("posts")
     .insert({
-      user_id: userId,
+      workspace_id: workspaceId,
+      user_id: session.user.id,
       content: parsed.data.content,
       target_type: target.targetType,
       social_account_id: accountId,
@@ -146,13 +152,13 @@ export async function scheduleDraftInQueue(
   if (!z.string().uuid().safeParse(postId).success) return { ok: false, error: "Invalid post." };
 
   const supabase = await createClient();
-  const userId = session.user.id;
+  const workspaceId = session.workspace.id;
 
   const { data: post, error: postError } = await supabase
     .from("posts")
     .select("id, status, social_account_id, social_page_id")
     .eq("id", postId)
-    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId)
     .maybeSingle<Pick<Post, "id" | "status" | "social_account_id" | "social_page_id">>();
 
   if (postError) return { ok: false, error: `Could not load that post: ${postError.message}` };
@@ -161,15 +167,15 @@ export async function scheduleDraftInQueue(
     return { ok: false, error: "Only draft posts can be promoted into the queue." };
   }
   if (!post.social_account_id) {
-    return { ok: false, error: "Reconnect LinkedIn and choose a target before queuing this post." };
+    return { ok: false, error: "Reconnect the account and choose a target before queuing this post." };
   }
 
   const [settingsResult, scheduledResult] = await Promise.all([
-    supabase.from("queue_settings").select("*").eq("user_id", userId).maybeSingle(),
+    supabase.from("queue_settings").select("*").eq("workspace_id", workspaceId).maybeSingle(),
     supabase
       .from("posts")
       .select("scheduled_for")
-      .eq("user_id", userId)
+      .eq("workspace_id", workspaceId)
       .eq("status", "scheduled")
       .not("scheduled_for", "is", null)
       .order("scheduled_for", { ascending: false })
@@ -177,10 +183,15 @@ export async function scheduleDraftInQueue(
   ]);
 
   const settings = (settingsResult.data as QueueSettings | null) ?? {
+    workspace_id: workspaceId,
+    user_id: session.user.id,
     timezone: session.profile.timezone,
     posting_days: session.profile.default_posting_days,
     posting_times: [session.profile.default_posting_time],
     is_paused: false,
+    last_assigned_at: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
 
   if (settings.is_paused) {
@@ -208,7 +219,7 @@ export async function scheduleDraftInQueue(
     .from("posts")
     .update({ status: "scheduled", scheduled_for: slot.iso })
     .eq("id", postId)
-    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId)
     .eq("status", "draft")
     .select("id");
 
@@ -233,10 +244,11 @@ export async function reorderQueue(
   if (session.demo) return { ok: false, error: DEMO_ERROR };
 
   const supabase = await createClient();
+  const workspaceId = session.workspace.id;
   const { data, error } = await supabase
     .from("posts")
     .select("*")
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", workspaceId)
     .eq("status", "scheduled")
     .not("scheduled_for", "is", null)
     .order("scheduled_for", { ascending: true })
@@ -273,7 +285,7 @@ export async function reorderQueue(
     .from("posts")
     .update({ scheduled_for: first.time })
     .eq("id", first.id)
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", workspaceId)
     .eq("status", "scheduled")
     .select("id");
   if (resultOne.error) return { ok: false, error: `Could not reorder: ${resultOne.error.message}` };
@@ -285,7 +297,7 @@ export async function reorderQueue(
     .from("posts")
     .update({ scheduled_for: second.time })
     .eq("id", second.id)
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", workspaceId)
     .eq("status", "scheduled")
     .select("id");
   if (resultTwo.error || !resultTwo.data || resultTwo.data.length === 0) {
@@ -293,7 +305,7 @@ export async function reorderQueue(
       .from("posts")
       .update({ scheduled_for: current.scheduled_for })
       .eq("id", current.id)
-      .eq("user_id", session.user.id);
+      .eq("workspace_id", workspaceId);
     return {
       ok: false,
       error: `Could not reorder: ${resultTwo.error?.message ?? "the queue changed. Refresh and try again."}`,
@@ -324,13 +336,14 @@ export async function updateQueueSettings(input: {
   const supabase = await createClient();
   const { error } = await supabase.from("queue_settings").upsert(
     {
+      workspace_id: session.workspace.id,
       user_id: session.user.id,
       timezone: data.timezone,
       posting_days: days,
       posting_times: times.map((time) => `${time}:00`),
       is_paused: data.isPaused ?? false,
     },
-    { onConflict: "user_id" },
+    { onConflict: "workspace_id" },
   );
   if (error) return { ok: false, error: `Could not save queue settings: ${error.message}` };
 
@@ -353,18 +366,20 @@ export async function toggleQueuePaused(paused: boolean): Promise<ActionResult> 
   if (session.demo) return { ok: false, error: DEMO_ERROR };
 
   const supabase = await createClient();
+  const workspaceId = session.workspace.id;
   // Only touch is_paused. An upsert here used to rewrite timezone/days/times
   // from stale profile defaults, silently discarding saved queue settings.
   const { data: updated, error } = await supabase
     .from("queue_settings")
     .update({ is_paused: paused })
-    .eq("user_id", session.user.id)
-    .select("user_id");
+    .eq("workspace_id", workspaceId)
+    .select("workspace_id");
 
   if (error) return { ok: false, error: `Could not update the queue: ${error.message}` };
 
   if (!updated || updated.length === 0) {
     const { error: insertError } = await supabase.from("queue_settings").insert({
+      workspace_id: workspaceId,
       user_id: session.user.id,
       timezone: session.profile.timezone,
       posting_days: session.profile.default_posting_days,

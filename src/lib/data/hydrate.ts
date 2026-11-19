@@ -5,6 +5,7 @@ type AccountRow = {
   id: string;
   display_name: string;
   avatar_url: string | null;
+  provider: "linkedin" | "facebook";
   provider_account_id: string;
   status: "connected" | "needs_reconnect" | "disconnected";
 };
@@ -18,6 +19,7 @@ type PageRow = {
 
 type MediaRow = {
   id: string;
+  workspace_id: string;
   post_id: string;
   user_id: string;
   storage_path: string;
@@ -45,7 +47,7 @@ export async function hydratePosts(
     accountIds.length
       ? supabase
           .from("social_accounts")
-          .select("id, display_name, avatar_url, provider_account_id, status")
+          .select("id, display_name, avatar_url, provider, provider_account_id, status")
           .in("id", accountIds)
       : Promise.resolve({ data: [], error: null }),
     pageIds.length
@@ -56,7 +58,7 @@ export async function hydratePosts(
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from("post_media")
-      .select("id, post_id, user_id, storage_path, mime_type, alt_text, size_bytes, created_at")
+      .select("id, workspace_id, post_id, user_id, storage_path, mime_type, alt_text, size_bytes, created_at")
       .in("post_id", postIds),
   ]);
 
@@ -82,6 +84,7 @@ export async function hydratePosts(
             id: account.id,
             display_name: account.display_name,
             avatar_url: account.avatar_url,
+            provider: account.provider,
             provider_account_id: account.provider_account_id,
             status: account.status,
           }

@@ -66,13 +66,18 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() ?? "";
 const redirectUri = process.env.LINKEDIN_REDIRECT_URI?.trim() || `${appUrl}/api/linkedin/callback`;
 const clientId = process.env.LINKEDIN_CLIENT_ID?.trim() ?? "";
 const clientSecret = process.env.LINKEDIN_CLIENT_SECRET?.trim() ?? "";
+const facebookAppId = process.env.FACEBOOK_APP_ID?.trim() ?? "";
+const facebookAppSecret = process.env.FACEBOOK_APP_SECRET?.trim() ?? "";
+const facebookConfigured = Boolean(facebookAppId && facebookAppSecret);
+const facebookRedirectUri =
+  process.env.FACEBOOK_REDIRECT_URI?.trim() || `${appUrl}/api/facebook/callback`;
 const mockMode =
   process.env.LINKEDIN_MOCK_MODE === "true" && process.env.NODE_ENV !== "production";
 // The connect route falls back to a mock account only when mock mode is on AND
 // both client credentials are absent. Otherwise it starts real OAuth, so those
 // checks stay required.
 const canUseMockConnect = mockMode && !clientId && !clientSecret;
-const realOAuthRequired = !canUseMockConnect;
+const realOAuthRequired = !canUseMockConnect && Boolean(clientId || clientSecret);
 const cronSecret = process.env.CRON_SECRET?.trim() ?? "";
 const apiVersion = process.env.LINKEDIN_API_VERSION?.trim() || "202610";
 const scopes = (process.env.LINKEDIN_SCOPES?.trim() || "openid profile email w_member_social")
@@ -80,13 +85,13 @@ const scopes = (process.env.LINKEDIN_SCOPES?.trim() || "openid profile email w_m
   .filter(Boolean);
 const ref = url.match(/^https:\/\/([a-z0-9]+)\.supabase\.co\/?$/i)?.[1] ?? "";
 
-function inspectRedirect(uri) {
+function inspectRedirect(uri, expectedPath = "/api/linkedin/callback") {
   try {
     const parsed = new URL(uri);
     return {
       secure: parsed.protocol === "https:",
       path: parsed.pathname,
-      pathOk: parsed.pathname.replace(/\/+$/, "") === "/api/linkedin/callback",
+      pathOk: parsed.pathname.replace(/\/+$/, "") === expectedPath,
       clean: !parsed.search && !parsed.hash,
       localhost: ["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname),
     };
@@ -96,6 +101,7 @@ function inspectRedirect(uri) {
 }
 
 const redirect = inspectRedirect(redirectUri);
+const facebookRedirect = inspectRedirect(facebookRedirectUri, "/api/facebook/callback");
 
 const headers = publicKey
   ? { apikey: publicKey, Authorization: `Bearer ${publicKey}` }
@@ -300,6 +306,43 @@ check(
   "Mock publishing",
   process.env.LINKEDIN_MOCK_MODE !== "true" || process.env.NODE_ENV !== "production",
   process.env.LINKEDIN_MOCK_MODE === "true"
+    ? "enabled - never enable this in production"
+    : "disabled",
+  { required: false },
+);
+
+check(
+  "FACEBOOK_APP_ID / FACEBOOK_APP_SECRET",
+  facebookConfigured || (!facebookAppId && !facebookAppSecret),
+  facebookConfigured
+    ? "set"
+    : facebookAppId || facebookAppSecret
+      ? "only one of the pair is set - Facebook connect will fail"
+      : "not set - Facebook Pages cannot connect (LinkedIn is unaffected)",
+  { required: facebookAppId || facebookAppSecret ? true : false },
+);
+check(
+  "Facebook redirect path",
+  facebookRedirect.secure && facebookRedirect.pathOk && facebookRedirect.clean,
+  !facebookConfigured
+    ? "not configured"
+    : facebookRedirect.secure && facebookRedirect.pathOk && facebookRedirect.clean
+      ? facebookRedirectUri
+      : `${facebookRedirectUri || "(missing)"} - must be exactly https://<host>/api/facebook/callback with no query string or fragment`,
+  { required: facebookConfigured },
+);
+check(
+  "Facebook redirect host",
+  !(facebookConfigured && facebookRedirect.localhost),
+  facebookConfigured && facebookRedirect.localhost
+    ? "localhost callback is not reachable by Facebook - run an HTTPS tunnel and set FACEBOOK_REDIRECT_URI"
+    : "not localhost",
+  { required: false },
+);
+check(
+  "Mock Facebook",
+  process.env.FACEBOOK_MOCK_MODE !== "true" || process.env.NODE_ENV !== "production",
+  process.env.FACEBOOK_MOCK_MODE === "true"
     ? "enabled - never enable this in production"
     : "disabled",
   { required: false },

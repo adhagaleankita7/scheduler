@@ -15,9 +15,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-dvh">
-      <DesktopSidebar profile={profile} email={session.user.email} demo={session.demo} />
+      <DesktopSidebar
+        profile={profile}
+        email={session.user.email}
+        demo={session.demo}
+        workspace={session.workspace}
+        workspaces={session.workspaces}
+      />
       <div className="flex min-h-dvh flex-col lg:pl-[268px]">
-        <Topbar profile={profile} email={session.user.email} demo={session.demo} />
+        <Topbar
+          profile={profile}
+          email={session.user.email}
+          demo={session.demo}
+          workspace={session.workspace}
+          workspaces={session.workspaces}
+        />
         {session.demo && <DemoBanner />}
         {!session.demo && isLinkedInMockMode() && <MockModeBanner />}
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">

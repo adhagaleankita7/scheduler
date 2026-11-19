@@ -104,7 +104,7 @@ function CalendarChip({
         dragging && "opacity-40",
         compact ? "" : "hover:border-primary/30 hover:shadow-sm",
       )}
-      title={`${time} · ${target ?? "LinkedIn"} — ${truncate(post.content, 140)}`}
+      title={`${time} · ${target ?? "Publishing target"} — ${truncate(post.content, 140)}`}
     >
       <Link href={href} className="flex items-center gap-1.5" draggable={false}>
         <StatusDot status={post.status} />

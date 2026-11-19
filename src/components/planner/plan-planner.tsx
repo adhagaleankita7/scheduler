@@ -11,9 +11,11 @@ import {
   Circle,
   Clock3,
   Copy,
+  ImagePlus,
   Loader2,
   Save,
   Sparkles,
+  Trash2,
   TriangleAlert,
   Wand2,
 } from "lucide-react";
@@ -25,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { TargetSelect } from "@/components/shared/target-select";
 import { scheduleWeek } from "@/lib/actions/posts";
+import { createClient } from "@/lib/supabase/client";
 import {
   addDaysToDateKey,
   dateKeyToUtcDate,
@@ -34,8 +37,24 @@ import {
   weekdayOfDateKey,
 } from "@/lib/scheduling/timezone";
 import { MAX_POST_LENGTH, countCharacters } from "@/lib/validation";
+import { MAX_PLAN_DAYS } from "@/lib/scheduling/slots";
+import { randomUUID } from "@/lib/uuid";
 import type { PublishTargetOption } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
+
+type DayMedia = {
+  path: string;
+  mimeType: string;
+  alt: string;
+  url: string | null;
+};
+
+function emptyMedia(dayCount: number): (DayMedia | null)[] {
+  return Array.from({ length: dayCount }, () => null);
+}
 
 function dayLabel(dateKey: string) {
   return formatInZone(dateKeyToUtcDate(dateKey), "UTC", "EEEE");
@@ -49,38 +68,49 @@ function isToday(dateKey: string, timezone: string) {
   return dateKey === todayDateKey(timezone);
 }
 
-export function WeekPlanner({
+export function PlanPlanner({
   targets,
   timezone,
   defaultTime,
   defaultStartDate,
   demo,
+  userId,
+  days,
 }: {
   targets: PublishTargetOption[];
   timezone: string;
   defaultTime: string;
   defaultStartDate: string;
   demo: boolean;
+  userId: string;
+  /** Length of the plan: 7 for a week, 30 for a month. */
+  days: number;
 }) {
+  const dayCount = Math.min(MAX_PLAN_DAYS, Math.max(1, Math.trunc(days)));
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [pendingAction, setPendingAction] = useState<"schedule" | "draft" | null>(null);
 
   const firstTarget = targets.find((target) => target.canPublish)?.value ?? "";
   const [target, setTarget] = useState(firstTarget);
-  const [name, setName] = useState("7-day LinkedIn plan");
+  const [name, setName] = useState(`${dayCount}-day publishing plan`);
   const [startDate, setStartDate] = useState(defaultStartDate);
   const [globalTime, setGlobalTime] = useState(defaultTime);
-  const [contents, setContents] = useState<string[]>(() => Array.from({ length: 7 }, () => ""));
-  const [times, setTimes] = useState<string[]>(() =>
-    Array.from({ length: 7 }, () => defaultTime),
+  const [contents, setContents] = useState<string[]>(() =>
+    Array.from({ length: dayCount }, () => ""),
   );
+  const [times, setTimes] = useState<string[]>(() =>
+    Array.from({ length: dayCount }, () => defaultTime),
+  );
+  const [weekMedia, setWeekMedia] = useState<(DayMedia | null)[]>(() => emptyMedia(dayCount));
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
+  const [mediaErrors, setMediaErrors] = useState<Record<number, string>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   const rows = useMemo(
     () =>
-      Array.from({ length: 7 }).map((_, index) => {
+      Array.from({ length: dayCount }).map((_, index) => {
         // Guard against a cleared/invalid <input type="date"> value: without
         // this, addDaysToDateKey("") produces Invalid Date and formatting throws.
         const baseDate = isValidDateKey(startDate) ? startDate : todayDateKey(timezone);
@@ -93,12 +123,13 @@ export function WeekPlanner({
           time: times[index] ?? globalTime,
         };
       }),
-    [startDate, contents, times, globalTime, timezone],
+    [startDate, contents, times, globalTime, timezone, dayCount],
   );
 
   const filled = rows.filter((row) => row.content.trim().length > 0);
   const selected = targets.find((item) => item.value === target) ?? null;
-  const canSubmit = !demo && Boolean(selected?.canPublish) && filled.length > 0;
+  const canSubmit =
+    !demo && uploadingIndex === null && Boolean(selected?.canPublish) && filled.length > 0;
   const totalErrors = Object.keys(fieldErrors).length;
 
   function updateContent(index: number, value: string) {
@@ -121,29 +152,122 @@ export function WeekPlanner({
 
   function applyTimeToAll(value: string) {
     setGlobalTime(value);
-    setTimes(Array.from({ length: 7 }, () => value));
+    setTimes(Array.from({ length: dayCount }, () => value));
+  }
+
+  async function handleImage(index: number, file: File) {
+    setMediaErrors((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    if (!ALLOWED_TYPES.includes(file.type as (typeof ALLOWED_TYPES)[number])) {
+      setMediaErrors((current) => ({ ...current, [index]: "Images must be JPEG, PNG or WebP." }));
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setMediaErrors((current) => ({ ...current, [index]: "Images must be smaller than 8 MB." }));
+      return;
+    }
+    if (demo) {
+      setError("Demo mode cannot upload files. Connect Supabase to attach images.");
+      return;
+    }
+
+    setUploadingIndex(index);
+    try {
+      const supabase = createClient();
+      const extension =
+        file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+      const path = `${userId}/${randomUUID()}.${extension}`;
+      const { error: uploadError } = await supabase.storage
+        .from("post-media")
+        .upload(path, file, { contentType: file.type, upsert: false });
+      if (uploadError) throw new Error(uploadError.message);
+
+      const { data } = await supabase.storage.from("post-media").createSignedUrl(path, 3600);
+      setWeekMedia((current) =>
+        current.map((item, i) =>
+          i === index
+            ? { path, mimeType: file.type, alt: item?.alt ?? "", url: data?.signedUrl ?? null }
+            : item,
+        ),
+      );
+      toast.success("Image uploaded");
+    } catch (uploadError) {
+      setMediaErrors((current) => ({
+        ...current,
+        [index]:
+          uploadError instanceof Error
+            ? `Upload failed: ${uploadError.message}`
+            : "Upload failed. Try a smaller image.",
+      }));
+    } finally {
+      setUploadingIndex(null);
+    }
+  }
+
+  function removeImage(index: number) {
+    const current = weekMedia[index];
+    setWeekMedia((items) => items.map((item, i) => (i === index ? null : item)));
+    setMediaErrors((errors) => {
+      const next = { ...errors };
+      delete next[index];
+      return next;
+    });
+    if (current?.path && !demo) {
+      try {
+        void createClient()
+          .storage.from("post-media")
+          .remove([current.path])
+          .catch(() => {});
+      } catch {
+        // Best-effort cleanup — the database rows are what matter.
+      }
+    }
+  }
+
+  function updateAltText(index: number, value: string) {
+    setWeekMedia((items) =>
+      items.map((item, i) => (i === index && item ? { ...item, alt: value } : item)),
+    );
   }
 
   function submit(action: "schedule" | "draft") {
     setError(null);
     setFieldErrors({});
+    if (uploadingIndex !== null) {
+      setError("Wait for the image upload to finish.");
+      return;
+    }
     if (!selected) {
-      setError("Choose a LinkedIn profile or company page first.");
+      setError("Choose a LinkedIn profile/page or a Facebook Page first.");
       return;
     }
     if (!selected.canPublish) {
-      setError(selected.disabledReason ?? "That LinkedIn target can't publish yet.");
+      setError(selected.disabledReason ?? "That publishing target can't publish yet.");
       return;
     }
     if (filled.length === 0) {
       setError("Write at least one post before continuing.");
       return;
     }
+    const imageOnly = rows.filter(
+      (row) => weekMedia[row.index] !== null && !row.content.trim(),
+    );
+    if (imageOnly.length > 0) {
+      setError(
+        `Add text (or remove the image) for ${imageOnly
+          .map((row) => dayLabel(row.dateKey))
+          .join(", ")}.`,
+      );
+      return;
+    }
 
     setPendingAction(action);
     startTransition(async () => {
       const result = await scheduleWeek({
-        name: name.trim() || "7-day LinkedIn plan",
+        name: name.trim() || `${dayCount}-day publishing plan`,
         timezone,
         target,
         action,
@@ -151,6 +275,9 @@ export function WeekPlanner({
           dateKey: row.dateKey,
           time: row.time || globalTime,
           content: row.content,
+          mediaPath: weekMedia[row.index]?.path ?? null,
+          mediaMimeType: weekMedia[row.index]?.mimeType ?? null,
+          mediaAlt: weekMedia[row.index]?.alt.trim() || null,
         })),
       });
       setPendingAction(null);
@@ -164,7 +291,7 @@ export function WeekPlanner({
 
       toast.success(
         result.message ??
-          (action === "schedule" ? "Week scheduled" : "Drafts saved"),
+          (action === "schedule" ? "Plan scheduled" : "Drafts saved"),
       );
       router.push(action === "schedule" ? "/queue" : "/posts?status=draft");
       router.refresh();
@@ -176,14 +303,16 @@ export function WeekPlanner({
       <Card className="border-amber-500/25 bg-amber-500/[0.05]">
         <CardContent className="flex flex-col items-start gap-3 py-8">
           <div className="flex items-center gap-2 text-[13px] font-semibold text-amber-700 dark:text-amber-300">
-            <TriangleAlert className="size-4" /> Connect LinkedIn to plan your week
+            <TriangleAlert className="size-4" />{" "}
+            {dayCount === 30 ? "Connect an account to plan your month" : "Connect an account to plan your week"}
           </div>
           <p className="text-muted-foreground max-w-xl text-[12.5px] leading-relaxed">
-            LINKFLOW schedules through the official LinkedIn API. Connect your personal profile or an
-            authorized company page, then come back to write all seven posts in one sitting.
+            LINKFLOW schedules through the official LinkedIn and Facebook APIs. Connect your
+            LinkedIn profile/company page or a Facebook Page, then come back to write all {dayCount}{" "}
+            posts in one sitting.
           </p>
           <Button asChild variant="gradient" size="sm">
-            <Link href="/accounts">Connect LinkedIn</Link>
+            <Link href="/accounts">Connect an account</Link>
           </Button>
         </CardContent>
       </Card>
@@ -199,7 +328,7 @@ export function WeekPlanner({
             <Wand2 className="size-4 text-primary" /> Plan setup
           </CardTitle>
           <CardDescription>
-            Every row becomes one post. The whole week is scheduled in a single request.
+            Every row becomes one post. The whole plan is scheduled in a single request.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -259,7 +388,7 @@ export function WeekPlanner({
               value={name}
               maxLength={80}
               onChange={(event) => setName(event.target.value)}
-              placeholder="7-day LinkedIn plan"
+              placeholder={`${dayCount}-day publishing plan`}
             />
           </div>
           <div className="space-y-1.5 sm:col-span-2 xl:col-span-1">
@@ -275,18 +404,18 @@ export function WeekPlanner({
               />
             </div>
             <p className="text-muted-foreground text-[10.5px]">
-              Applies to all 7 days in {timezone}. You can override each day.
+              Applies to all {dayCount} days in {timezone}. You can override each day.
             </p>
           </div>
           <div className="flex items-end sm:col-span-2 xl:col-span-3">
             <div className="text-muted-foreground flex w-full flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border/70 bg-muted/40 px-3 py-2.5 text-[11.5px]">
               <span className="inline-flex items-center gap-1.5">
                 <CalendarRange className="size-3.5 text-primary" />
-                {shortDate(rows[0].dateKey)} → {shortDate(rows[6].dateKey)}
+                {shortDate(rows[0].dateKey)} → {shortDate(rows[dayCount - 1].dateKey)}
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <CalendarCheck2 className="size-3.5 text-emerald-500" />
-                {filled.length} of 7 posts written
+                {filled.length} of {dayCount} posts written
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <Clock3 className="size-3.5 text-violet-500" /> one post per day
@@ -296,13 +425,19 @@ export function WeekPlanner({
         </CardContent>
       </Card>
 
-      {/* Seven days */}
+      {/* Plan days */}
       <div className="space-y-2.5">
         {rows.map((row) => {
           const characters = countCharacters(row.content);
           const overLimit = characters > MAX_POST_LENGTH;
           const contentError = fieldErrors[`entries.${row.index}.content`];
           const timeError = fieldErrors[`entries.${row.index}.time`];
+          const dayMedia = weekMedia[row.index] ?? null;
+          const mediaError =
+            fieldErrors[`entries.${row.index}.mediaPath`] ??
+            fieldErrors[`entries.${row.index}.mediaMimeType`] ??
+            mediaErrors[row.index];
+          const isUploading = uploadingIndex === row.index;
           const today = isToday(row.dateKey, timezone);
           return (
             <div
@@ -354,6 +489,11 @@ export function WeekPlanner({
                         <Circle className="size-3 text-muted-foreground/40" />
                       )}
                       {row.content.trim() ? "Ready" : "Empty — will be skipped"}
+                      {dayMedia && (
+                        <span className="text-primary inline-flex items-center gap-1">
+                          <ImagePlus className="size-3" /> Image
+                        </span>
+                      )}
                     </span>
                     <span
                       className={cn(
@@ -378,6 +518,88 @@ export function WeekPlanner({
                   {contentError && (
                     <p className="text-[10.5px] text-destructive">{contentError}</p>
                   )}
+
+                  <div className="mt-2.5">
+                    {dayMedia ? (
+                      <div className="flex flex-col gap-2 rounded-xl border border-border/70 bg-muted/30 p-2 sm:flex-row">
+                        <div className="relative h-20 w-full shrink-0 overflow-hidden rounded-lg border border-border/70 sm:w-28">
+                          {dayMedia.url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={dayMedia.url}
+                              alt={dayMedia.alt || `Image for ${dayLabel(row.dateKey)}`}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="text-muted-foreground grid h-full w-full place-items-center bg-muted">
+                              <ImagePlus className="size-5" />
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeImage(row.index)}
+                            disabled={pending}
+                            className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/60 text-white backdrop-blur transition-colors hover:bg-black/80 disabled:opacity-50"
+                            aria-label={`Remove image for ${dayLabel(row.dateKey)}`}
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <Input
+                            value={dayMedia.alt}
+                            maxLength={300}
+                            onChange={(event) => updateAltText(row.index, event.target.value)}
+                            placeholder="Image description (alt text) for screen readers"
+                            className="h-8 text-[11.5px]"
+                            aria-label={`Image description for ${dayLabel(row.dateKey)}`}
+                          />
+                          <p className="text-muted-foreground mt-1 text-[10px]">
+                            Attached to {dayLabel(row.dateKey)}&apos;s post · JPEG, PNG or WebP up to 8
+                            MB
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          id={`day-image-${row.index}`}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="sr-only"
+                          disabled={demo || uploadingIndex !== null}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = "";
+                            if (file) void handleImage(row.index, file);
+                          }}
+                        />
+                        <label
+                          htmlFor={`day-image-${row.index}`}
+                          className={cn(
+                            "inline-flex cursor-pointer flex-wrap items-center gap-1.5 text-[11px] font-medium text-primary hover:underline",
+                            (demo || uploadingIndex !== null) && "pointer-events-none opacity-50",
+                          )}
+                        >
+                          {isUploading ? (
+                            <>
+                              <Loader2 className="size-3.5 animate-spin" /> Uploading…
+                            </>
+                          ) : (
+                            <>
+                              <ImagePlus className="size-3.5" /> Add image
+                              <span className="text-muted-foreground font-normal">
+                                · JPEG, PNG or WebP up to 8 MB
+                              </span>
+                            </>
+                          )}
+                        </label>
+                      </>
+                    )}
+                    {mediaError && (
+                      <p className="mt-1 text-[10.5px] text-destructive">{mediaError}</p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -400,7 +622,7 @@ export function WeekPlanner({
       {demo && (
         <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-3.5 py-3 text-[11.5px] text-amber-700 dark:text-amber-300">
           <span className="font-semibold">Demo mode is read-only.</span> You can explore the planner,
-          but scheduling requires a Supabase project and a connected LinkedIn account.
+          but scheduling requires a Supabase project and a connected social account.
         </div>
       )}
 
@@ -455,7 +677,7 @@ export function WeekPlanner({
 
       <p className="text-muted-foreground flex flex-wrap items-center gap-x-1.5 text-[10.5px]">
         <Copy className="size-3" />
-        Need to reuse last week? Open{" "}
+        Need to reuse an earlier post? Open{" "}
         <Link href="/posts" className="font-medium text-primary hover:underline">
           All posts
         </Link>{" "}

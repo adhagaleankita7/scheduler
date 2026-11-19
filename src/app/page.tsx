@@ -29,9 +29,9 @@ import { getSessionContext } from "@/lib/session";
 const FEATURES = [
   {
     icon: CalendarRange,
-    title: "A 7-day planner that thinks ahead",
+    title: "A 30-day planner that thinks ahead",
     description:
-      "Draft seven posts once, assign each day a time, and publish the whole week in one click. No spreadsheets, no reminders.",
+      "Draft a month of posts once, assign each day a time, and publish the whole month in one click. No spreadsheets, no reminders.",
     tone: "from-blue-500/15 to-indigo-500/5 text-blue-600 dark:text-blue-300",
   },
   {
@@ -84,21 +84,21 @@ const WEEK = [
 const STEPS = [
   {
     number: "01",
-    title: "Connect LinkedIn",
+    title: "Connect LinkedIn or Facebook",
     description:
-      "Authorize your profile or company page through official LinkedIn OAuth. Tokens are stored server-side in Vault.",
+      "Authorize your LinkedIn profile/company page or a Facebook Page through official OAuth. Tokens are stored server-side in Vault.",
   },
   {
     number: "02",
-    title: "Write your week",
+    title: "Write your month",
     description:
-      "Seven prompts, seven days, one fixed time. Preview every post exactly as LinkedIn will render it.",
+      "Thirty prompts, thirty days, one fixed time. Preview every post exactly as LinkedIn or Facebook will render it.",
   },
   {
     number: "03",
     title: "Close the laptop",
     description:
-      "LINKFLOW claims each due post, publishes through the LinkedIn Posts API and logs every attempt.",
+      "LINKFLOW claims each due post, publishes through the official LinkedIn or Facebook API and logs every attempt.",
   },
 ];
 
@@ -158,25 +158,25 @@ export default async function LandingPage() {
               New
             </span>
             <Sparkles className="size-3.5 text-primary" />
-            <span>Built for the 7-day LinkedIn workflow</span>
+            <span>Built for the 30-day LinkedIn workflow</span>
             <ChevronRight className="size-3 text-muted-foreground" />
           </div>
 
           <h1 className="font-display animate-fade-up mt-6 text-balance text-[42px] leading-[1.03] font-extrabold tracking-[-0.045em] sm:text-6xl lg:text-[68px]">
-            Your LinkedIn week,
+            Your LinkedIn month,
             <br />
             <span className="gradient-text">published on autopilot.</span>
           </h1>
 
           <p className="animate-fade-up mx-auto mt-6 max-w-xl text-[15px] leading-relaxed text-muted-foreground sm:text-base">
-            Write seven posts in one sitting. LINKFLOW queues them, publishes one every day at
+            Write thirty posts in one sitting. LINKFLOW queues them, publishes one every day at
             10:00 AM, and shows you exactly what happened — even when your laptop is off.
           </p>
 
           <div className="animate-fade-up mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Button asChild size="lg" variant="gradient" className="h-12 w-full px-7 sm:w-auto">
               <Link href={primaryHref}>
-                Plan my first week <ArrowRight className="size-4" />
+                Plan my first month <ArrowRight className="size-4" />
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="h-12 w-full bg-card/70 px-6 sm:w-auto">
@@ -213,7 +213,7 @@ export default async function LandingPage() {
                 <div className="hidden border-r border-border/70 p-3 sm:block">
                   <Logo className="scale-90 origin-left" />
                   <div className="mt-4 space-y-1">
-                    {["Dashboard", "Composer", "7-day planner", "Calendar", "Queue", "All posts"].map((item, index) => (
+                    {["Dashboard", "Composer", "30-day planner", "Calendar", "Queue", "All posts"].map((item, index) => (
                       <div
                         key={item}
                         className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-[10px] font-medium ${
@@ -226,9 +226,9 @@ export default async function LandingPage() {
                     ))}
                   </div>
                   <div className="mt-6 rounded-lg border border-primary/15 bg-primary/5 p-2.5">
-                    <p className="text-[9px] font-semibold">Plan a full week</p>
+                    <p className="text-[9px] font-semibold">Plan a full month</p>
                     <p className="mt-1 text-[8.5px] leading-relaxed text-muted-foreground">
-                      Seven posts. One click. Zero daily admin.
+                      Thirty posts. One click. Zero daily admin.
                     </p>
                   </div>
                 </div>
@@ -376,21 +376,21 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* Weekly workflow */}
+      {/* Monthly workflow */}
       <section id="workflow" className="relative z-10 border-y border-border/70 bg-card/40">
         <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <div>
               <Badge variant="outline" className="mb-4 border-primary/20 bg-primary/5 text-primary">
-                The 7-day workflow
+                The 30-day workflow
               </Badge>
               <h2 className="font-display text-balance text-3xl font-bold tracking-[-0.035em] sm:text-[40px]">
                 One planning session.<br />
-                <span className="gradient-text">Seven days of presence.</span>
+                <span className="gradient-text">Thirty days of presence.</span>
               </h2>
               <p className="mt-4 max-w-lg text-[14px] leading-relaxed text-muted-foreground">
                 The hardest part of LinkedIn is showing up tomorrow. LINKFLOW turns a single burst of
-                inspiration into a week of consistent, on-time publishing.
+                inspiration into a month of consistent, on-time publishing.
               </p>
 
               <div className="mt-8 space-y-5">
@@ -576,10 +576,10 @@ export default async function LandingPage() {
           <div className="pointer-events-none absolute -bottom-32 right-10 size-72 rounded-full bg-black/15 blur-3xl" />
           <div className="relative">
             <p className="text-[11px] font-bold tracking-[0.16em] uppercase opacity-80">
-              Your next week starts here
+              Your next month starts here
             </p>
             <h2 className="font-display mx-auto mt-3 max-w-2xl text-balance text-3xl font-bold tracking-[-0.035em] sm:text-[42px]">
-              Seven posts. One click. Zero daily admin.
+              Thirty posts. One click. Zero daily admin.
             </h2>
             <p className="mx-auto mt-4 max-w-lg text-[13.5px] leading-relaxed text-white/85">
               Join the people who stopped fighting the algorithm and started showing up on time.

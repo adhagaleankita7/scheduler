@@ -211,6 +211,16 @@ export function isRetryableError(error: unknown) {
   return false;
 }
 
+/**
+ * LinkedIn rejects reposting identical commentary with a 400/409 that embeds
+ * the URN of the share it already has. Pulling that URN out lets the worker
+ * link the existing live post instead of failing forever on a duplicate.
+ */
+export function extractDuplicateUrn(message: string): string | null {
+  const match = message.match(/urn:li:(?:share|ugcPost|activity):\d+/i);
+  return match ? match[0] : null;
+}
+
 export function extractErrorDetail(body: string): string {
   if (!body) return "";
   try {

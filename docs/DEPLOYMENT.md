@@ -179,6 +179,12 @@ supabase secrets set \
   LINKEDIN_CLIENT_SECRET=<client-secret> \
   LINKEDIN_API_VERSION=202610 \
   LINKFLOW_ENV=production
+
+# Optional: Facebook Pages (required only if you connect Facebook)
+supabase secrets set \
+  FACEBOOK_APP_ID=<app-id> \
+  FACEBOOK_APP_SECRET=<app-secret> \
+  FACEBOOK_GRAPH_VERSION=v23.0
 ```
 
 Notes:
@@ -186,9 +192,10 @@ Notes:
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically by Supabase.
 - `--no-verify-jwt` is required because `pg_net` calls the function with a custom shared secret, not
   a user JWT. The function authorizes the request itself.
-- `LINKFLOW_ENV=production` makes the function refuse to run when `LINKEDIN_MOCK_MODE=true`,
-  guaranteeing mock results can never be mistaken for real publishing.
-- Do **not** set `LINKEDIN_MOCK_MODE` in production.
+- `LINKFLOW_ENV=production` makes the function refuse to run when `LINKEDIN_MOCK_MODE` or
+  `FACEBOOK_MOCK_MODE` is enabled, guaranteeing mock results can never be mistaken for real
+  publishing.
+- Do **not** set `LINKEDIN_MOCK_MODE` or `FACEBOOK_MOCK_MODE` in production.
 
 Smoke test:
 
@@ -225,7 +232,13 @@ LINKEDIN_SCOPES=openid profile email w_member_social
 # w_organization_social r_organization_admin
 LINKEDIN_API_VERSION=202610
 CRON_SECRET
-# Do NOT set LINKFLOW_DEMO_MODE or LINKEDIN_MOCK_MODE in production.
+# Optional — Facebook Pages:
+# FACEBOOK_APP_ID
+# FACEBOOK_APP_SECRET
+# FACEBOOK_SCOPES=public_profile pages_show_list pages_read_engagement pages_manage_posts
+# FACEBOOK_GRAPH_VERSION=v23.0
+# FACEBOOK_REDIRECT_URI=https://your-domain.com/api/facebook/callback
+# Do NOT set LINKFLOW_DEMO_MODE, LINKEDIN_MOCK_MODE or FACEBOOK_MOCK_MODE in production.
 ```
 
 4. Deploy.

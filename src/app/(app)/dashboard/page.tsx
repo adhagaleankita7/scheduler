@@ -97,7 +97,7 @@ export default async function DashboardPage() {
               <>
                 <p className="font-display text-lg font-semibold">Nothing queued yet</p>
                 <p className="text-muted-foreground mt-1 max-w-lg text-[12.5px]">
-                  Write seven posts in one sitting and LINKFLOW will publish one every day at your
+                  Write thirty posts in one sitting and LINKFLOW will publish one every day at your
                   chosen time — even while you&apos;re offline.
                 </p>
               </>
@@ -112,8 +112,8 @@ export default async function DashboardPage() {
               </Button>
             ) : null}
             <Button asChild variant="gradient">
-              <Link href="/planner">
-                <Sparkles className="size-4" /> Plan a 7-day week
+              <Link href="/planner/month">
+                <Sparkles className="size-4" /> Plan a 30-day month
               </Link>
             </Button>
           </div>
@@ -213,10 +213,10 @@ export default async function DashboardPage() {
                 compact
                 icon={Clock3}
                 title="No scheduled posts"
-                description="Your queue is empty. Plan a week of posts and they'll publish automatically."
+                description="Your queue is empty. Plan a month of posts and they'll publish automatically."
                 actions={
                   <Button asChild size="sm" variant="gradient">
-                    <Link href="/planner">Plan my week</Link>
+                    <Link href="/planner/month">Plan my month</Link>
                   </Button>
                 }
               />

@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { TargetSelect } from "@/components/shared/target-select";
 import { LinkedInPostPreview } from "@/components/shared/linkedin-preview";
+import { FacebookPostPreview } from "@/components/shared/facebook-preview";
 import { savePost } from "@/lib/actions/posts";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -36,6 +37,7 @@ import {
   zonedInputToIso,
 } from "@/lib/scheduling/timezone";
 import { MAX_POST_LENGTH, countCharacters } from "@/lib/validation";
+import { randomUUID } from "@/lib/uuid";
 import type { PostStatus, PublishTargetOption } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -134,7 +136,7 @@ export function Composer({
     try {
       const supabase = createClient();
       const extension = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-      const path = `${userId}/${crypto.randomUUID()}.${extension}`;
+      const path = `${userId}/${randomUUID()}.${extension}`;
       const { error: uploadError } = await supabase.storage
         .from("post-media")
         .upload(path, file, { contentType: file.type, upsert: false });
@@ -179,15 +181,15 @@ export function Composer({
       return;
     }
     if (overLimit) {
-      setError(`LinkedIn posts can be at most ${MAX_POST_LENGTH.toLocaleString()} characters.`);
+      setError(`Posts can be at most ${MAX_POST_LENGTH.toLocaleString()} characters.`);
       return;
     }
     if (!target) {
-      setError("Choose a LinkedIn profile or company page first.");
+      setError("Choose a LinkedIn profile/page or a Facebook Page first.");
       return;
     }
     if (!selected?.canPublish) {
-      setError(selected?.disabledReason ?? "That LinkedIn target can't publish yet.");
+      setError(selected?.disabledReason ?? "That publishing target can't publish yet.");
       return;
     }
 
@@ -244,7 +246,7 @@ export function Composer({
         <h3 className="font-display mt-3 text-[15px] font-semibold">This post can no longer be edited</h3>
         <p className="text-muted-foreground mx-auto mt-1.5 max-w-sm text-[12.5px]">
           {initial.status === "published"
-            ? "It's already live on LinkedIn. Duplicate it from All posts to reuse the content."
+            ? "It's already live. Duplicate it from All posts to reuse the content."
             : "The publishing engine is currently working on it."}
         </p>
         <Button asChild variant="outline" className="mt-4">
@@ -268,14 +270,14 @@ export function Composer({
         {targets.length === 0 ? (
           <div className="flex flex-col items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] p-5">
             <div className="flex items-center gap-2 text-[13px] font-semibold text-amber-700 dark:text-amber-300">
-              <TriangleAlert className="size-4" /> Connect LinkedIn to start writing
+              <TriangleAlert className="size-4" /> Connect an account to start writing
             </div>
             <p className="text-muted-foreground text-[12.5px] leading-relaxed">
-              LINKFLOW publishes through the official LinkedIn API. Connect your profile or an
-              authorized company page before creating posts.
+              LINKFLOW publishes through the official LinkedIn and Facebook APIs. Connect your
+              LinkedIn profile/company page or a Facebook Page before creating posts.
             </p>
             <Button asChild variant="gradient" size="sm">
-              <Link href="/accounts">Connect LinkedIn</Link>
+              <Link href="/accounts">Connect an account</Link>
             </Button>
           </div>
         ) : null}
@@ -462,17 +464,31 @@ export function Composer({
             <Eye className="size-3.5" /> Live preview
           </span>
           <Badge variant="outline" className="text-[9.5px]">
-            {selected?.targetType === "organization" ? "Company page" : "Personal profile"}
+            {selected?.platform === "facebook"
+              ? "Facebook Page"
+              : selected?.targetType === "organization"
+                ? "Company page"
+                : "Personal profile"}
           </Badge>
         </div>
-        <LinkedInPostPreview
-          content={content}
-          authorName={selected?.label ?? "Your LinkedIn profile"}
-          authorHeadline={selected?.subtitle ?? "LinkedIn member"}
-          authorAvatar={selected?.avatarUrl ?? null}
-          imageUrl={mediaUrl}
-          targetType={selected?.targetType ?? "member"}
-        />
+        {selected?.platform === "facebook" ? (
+          <FacebookPostPreview
+            content={content}
+            authorName={selected?.label ?? "Your Facebook Page"}
+            authorHeadline={selected?.subtitle ?? "Facebook Page"}
+            authorAvatar={selected?.avatarUrl ?? null}
+            imageUrl={mediaUrl}
+          />
+        ) : (
+          <LinkedInPostPreview
+            content={content}
+            authorName={selected?.label ?? "Your LinkedIn profile"}
+            authorHeadline={selected?.subtitle ?? "LinkedIn member"}
+            authorAvatar={selected?.avatarUrl ?? null}
+            imageUrl={mediaUrl}
+            targetType={selected?.targetType ?? "member"}
+          />
+        )}
         <div className="text-muted-foreground rounded-xl border border-border/70 bg-muted/40 px-3 py-2.5 text-[10.5px] leading-relaxed">
           <span className="inline-flex items-center gap-1 font-semibold text-foreground/80">
             <Sparkles className="size-3" /> Publishing checklist

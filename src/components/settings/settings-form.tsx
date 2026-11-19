@@ -29,7 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { updateSettings } from "@/lib/actions/settings";
 import { TIMEZONE_OPTIONS, WEEKDAYS } from "@/lib/scheduling/timezone";
-import type { Profile } from "@/lib/types";
+import type { Profile, WorkspaceRole } from "@/lib/types";
 import { cn, initials } from "@/lib/utils";
 
 const THEMES = [
@@ -44,11 +44,13 @@ export function SettingsForm({
   profile,
   email,
   queuePaused,
+  role,
   demo,
 }: {
   profile: Profile;
   email: string | null;
   queuePaused: boolean;
+  role: WorkspaceRole;
   demo: boolean;
 }) {
   const router = useRouter();
@@ -132,8 +134,8 @@ export function SettingsForm({
                 <p className="truncate text-[13px] font-semibold">{fullName || "Your name"}</p>
                 <p className="text-muted-foreground truncate text-[11px]">{email ?? "No email"}</p>
               </div>
-              <Badge variant="outline" className="ml-auto shrink-0">
-                Workspace owner
+              <Badge variant="outline" className="ml-auto shrink-0 capitalize">
+                {role === "owner" ? "Workspace owner" : role}
               </Badge>
             </div>
 
@@ -169,7 +171,8 @@ export function SettingsForm({
               <CalendarClock className="size-4 text-primary" /> Publishing defaults
             </CardTitle>
             <CardDescription>
-              Used by the 7-day planner and the queue. Existing scheduled posts keep their times.
+              Used by the 7-day and 30-day planners and the queue. Existing scheduled posts keep their
+              times.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

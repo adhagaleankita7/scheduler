@@ -117,6 +117,43 @@ describe("scheduleWeekSchema", () => {
     expect(parsed.entries[0].content).toBe("");
   });
 
+  it("accepts per-day image attachments", () => {
+    const parsed = scheduleWeekSchema.parse({
+      ...valid,
+      entries: [
+        {
+          dateKey: "2026-01-12",
+          time: "10:00",
+          content: "Monday",
+          mediaPath: "user-id/photo.jpg",
+          mediaMimeType: "image/jpeg",
+          mediaAlt: "A photo",
+        },
+      ],
+    });
+    expect(parsed.entries[0].mediaPath).toBe("user-id/photo.jpg");
+    expect(parsed.entries[0].mediaMimeType).toBe("image/jpeg");
+    expect(parsed.entries[0].mediaAlt).toBe("A photo");
+  });
+
+  it("rejects alt text longer than 300 characters", () => {
+    expect(
+      scheduleWeekSchema.safeParse({
+        ...valid,
+        entries: [
+          {
+            dateKey: "2026-01-12",
+            time: "10:00",
+            content: "Monday",
+            mediaPath: "user-id/photo.jpg",
+            mediaMimeType: "image/jpeg",
+            mediaAlt: "a".repeat(301),
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects bad dates, times, timezones and entry counts", () => {
     expect(
       scheduleWeekSchema.safeParse({
@@ -135,13 +172,23 @@ describe("scheduleWeekSchema", () => {
     expect(
       scheduleWeekSchema.safeParse({
         ...valid,
-        entries: Array.from({ length: 8 }, (_, index) => ({
+        entries: Array.from({ length: 31 }, (_, index) => ({
           dateKey: `2026-01-${String(index + 1).padStart(2, "0")}`,
           time: "10:00",
           content: "x",
         })),
       }).success,
     ).toBe(false);
+    expect(
+      scheduleWeekSchema.safeParse({
+        ...valid,
+        entries: Array.from({ length: 30 }, (_, index) => ({
+          dateKey: `2026-01-${String(index + 1).padStart(2, "0")}`,
+          time: "10:00",
+          content: "x",
+        })),
+      }).success,
+    ).toBe(true);
   });
 });
 

@@ -8,12 +8,15 @@ export type PostStatus =
 
 export type TargetType = "member" | "organization";
 
+export type SocialProvider = "linkedin" | "facebook";
+
 export type AccountStatus = "connected" | "needs_reconnect" | "disconnected";
 
 export type ScheduleStatus = "active" | "paused" | "completed";
 
 export type Post = {
   id: string;
+  workspace_id: string;
   user_id: string;
   social_account_id: string | null;
   social_page_id: string | null;
@@ -36,12 +39,18 @@ export type Post = {
   locked_by: string | null;
   queue_position: number | null;
   idempotency_key: string;
+  like_count: number;
+  comment_count: number;
+  share_count: number;
+  engagement_synced_at: string | null;
+  engagement_error: string | null;
   created_at: string;
   updated_at: string;
 };
 
 export type PostMedia = {
   id: string;
+  workspace_id: string;
   post_id: string;
   user_id: string;
   storage_path: string;
@@ -57,6 +66,7 @@ export type PostWithRelations = Post & {
     id: string;
     display_name: string;
     avatar_url: string | null;
+    provider: SocialProvider;
     provider_account_id: string;
     status: AccountStatus;
   } | null;
@@ -70,6 +80,7 @@ export type PostWithRelations = Post & {
 
 export type Profile = {
   id: string;
+  email: string | null;
   full_name: string | null;
   headline: string | null;
   avatar_url: string | null;
@@ -78,14 +89,43 @@ export type Profile = {
   default_posting_days: number[];
   theme: "light" | "dark" | "system";
   onboarded: boolean;
+  active_workspace_id: string | null;
   created_at: string;
   updated_at: string;
 };
 
+export type WorkspaceRole = "owner" | "editor" | "viewer";
+
+export type Workspace = {
+  id: string;
+  name: string;
+  owner_id: string;
+  role: WorkspaceRole;
+  created_at?: string;
+};
+
+export type WorkspaceMember = {
+  user_id: string;
+  role: WorkspaceRole;
+  joined_at: string;
+  full_name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+};
+
+export type WorkspaceInvite = {
+  id: string;
+  email: string;
+  role: Extract<WorkspaceRole, "editor" | "viewer">;
+  created_at: string;
+  expires_at: string;
+};
+
 export type SocialAccount = {
   id: string;
+  workspace_id: string;
   user_id: string;
-  provider: "linkedin";
+  provider: SocialProvider;
   provider_account_id: string;
   display_name: string;
   avatar_url: string | null;
@@ -103,8 +143,10 @@ export type SocialAccount = {
 
 export type SocialPage = {
   id: string;
+  workspace_id: string;
   user_id: string;
   social_account_id: string;
+  provider: SocialProvider;
   provider_page_id: string;
   name: string;
   vanity_name: string | null;
@@ -119,11 +161,12 @@ export type SocialPage = {
 
 export type PublishingLog = {
   id: number;
+  workspace_id: string | null;
   post_id: string | null;
   user_id: string | null;
   attempt: number | null;
   status: "started" | "success" | "failure" | "retry_scheduled" | "skipped";
-  provider: "linkedin" | "mock";
+  provider: "linkedin" | "facebook" | "mock";
   http_status: number | null;
   provider_post_id: string | null;
   error_code: string | null;
@@ -134,6 +177,7 @@ export type PublishingLog = {
 };
 
 export type QueueSettings = {
+  workspace_id: string;
   user_id: string;
   timezone: string;
   posting_days: number[];
@@ -146,6 +190,7 @@ export type QueueSettings = {
 
 export type PublishingSchedule = {
   id: string;
+  workspace_id: string;
   user_id: string;
   name: string;
   timezone: string;
@@ -186,6 +231,7 @@ export type PublishTargetOption = {
   accountId: string;
   pageId: string | null;
   targetType: TargetType;
+  platform: SocialProvider;
   label: string;
   subtitle: string;
   avatarUrl: string | null;

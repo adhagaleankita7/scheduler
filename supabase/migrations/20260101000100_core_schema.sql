@@ -105,7 +105,7 @@ create trigger social_pages_set_updated_at
   for each row execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- publishing_schedules — a named 7-day / weekly plan
+-- publishing_schedules — a named weekly or 30-day plan
 -- ---------------------------------------------------------------------------
 create table if not exists public.publishing_schedules (
   id uuid primary key default gen_random_uuid(),

@@ -252,8 +252,12 @@ export async function probeAuthorizationRequest(options: {
 
   const html = await response.text().catch(() => "");
   const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  // Some variants put the failure only in an href (e.g. the redirect URL with
+  // ?error=unauthorized_scope_error), which tag-stripping removes. Match against
+  // the raw markup as well so the detection does not depend on rendering.
+  const haystack = `${text} ${html}`;
 
-  if (/redirect_uri does not match the registered value/i.test(text)) {
+  if (/redirect_uri does not match the registered value/i.test(haystack)) {
     return {
       ok: false,
       code: "redirect_uri_mismatch",
@@ -262,7 +266,7 @@ export async function probeAuthorizationRequest(options: {
       blocking: true,
     };
   }
-  if (/client_id is invalid/i.test(text)) {
+  if (/client_id is invalid/i.test(haystack)) {
     return {
       ok: false,
       code: "invalid_client",
@@ -271,7 +275,10 @@ export async function probeAuthorizationRequest(options: {
       blocking: true,
     };
   }
-  if (/scope/i.test(text) && /(invalid|not (?:allowed|approved|authorized))/i.test(text)) {
+  if (
+    /scope/i.test(haystack) &&
+    /(invalid|unauthorized|not (?:allowed|approved|authorized))/i.test(haystack)
+  ) {
     return {
       ok: false,
       code: "invalid_scope",

@@ -3,10 +3,10 @@ import {
   CalendarRange,
   FileText,
   LayoutDashboard,
-  Linkedin,
   ListOrdered,
   PenSquare,
   Settings,
+  Share2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -16,16 +16,24 @@ export type NavItem = {
   icon: LucideIcon;
   exact?: boolean;
   featured?: boolean;
+  badge?: string;
 };
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/composer", label: "Composer", icon: PenSquare },
-  { href: "/planner", label: "7-day planner", icon: CalendarRange, featured: true },
+  { href: "/planner", label: "7-day planner", icon: CalendarRange, exact: true },
+  {
+    href: "/planner/month",
+    label: "30-day planner",
+    icon: CalendarDays,
+    featured: true,
+    badge: "30d",
+  },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/queue", label: "Queue", icon: ListOrdered },
   { href: "/posts", label: "All posts", icon: FileText },
-  { href: "/accounts", label: "Accounts", icon: Linkedin },
+  { href: "/accounts", label: "Accounts", icon: Share2 },
 ];
 
 export const SETTINGS_ITEM: NavItem = {
@@ -37,10 +45,11 @@ export const SETTINGS_ITEM: NavItem = {
 export const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/dashboard": { title: "Dashboard", subtitle: "Your publishing command center" },
   "/composer": { title: "Composer", subtitle: "Craft a post that sounds like you" },
-  "/planner": { title: "7-day planner", subtitle: "A full week of LinkedIn, handled" },
+  "/planner": { title: "7-day planner", subtitle: "A full week of content, handled" },
+  "/planner/month": { title: "30-day planner", subtitle: "A full month of content, handled" },
   "/calendar": { title: "Calendar", subtitle: "Every post, mapped in time" },
   "/queue": { title: "Queue", subtitle: "Your automatic publishing rhythm" },
   "/posts": { title: "All posts", subtitle: "Drafts, scheduled and published" },
-  "/accounts": { title: "Accounts", subtitle: "LinkedIn connections and pages" },
+  "/accounts": { title: "Accounts", subtitle: "LinkedIn and Facebook connections" },
   "/settings": { title: "Settings", subtitle: "Workspace preferences" },
 };

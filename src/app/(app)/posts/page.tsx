@@ -18,7 +18,7 @@ const STATUS_LABELS: Record<PostStatus, string> = {
   draft: "Drafts",
   scheduled: "Scheduled",
   processing: "Publishing",
-  published: "Published",
+  published: "Posted",
   failed: "Failed",
   cancelled: "Cancelled",
 };
@@ -27,7 +27,7 @@ const EMPTY_COPY: Record<PostStatus | "all", { title: string; description: strin
   all: {
     title: "No posts yet",
     description:
-      "Write your first post in the composer, or plan a full week and let LINKFLOW publish one every day.",
+      "Write your first post in the composer, or plan a full month and let LINKFLOW publish one every day.",
   },
   draft: {
     title: "No drafts",
@@ -35,15 +35,16 @@ const EMPTY_COPY: Record<PostStatus | "all", { title: string; description: strin
   },
   scheduled: {
     title: "Nothing scheduled",
-    description: "Plan a week from the 7-day planner or add a post straight to the queue.",
+    description: "Plan a week from the 7-day planner, a month from the 30-day planner, or add a post straight to the queue.",
   },
   processing: {
     title: "Nothing publishing right now",
     description: "Posts appear here for the few seconds the publishing engine is delivering them.",
   },
   published: {
-    title: "Nothing published yet",
-    description: "Once the engine publishes a post, it appears here with a link to LinkedIn.",
+    title: "Nothing posted yet",
+    description:
+      "Once the engine publishes a post it appears here as Posted, with a link to the live post and its like/comment counts.",
   },
   failed: {
     title: "No failed posts",

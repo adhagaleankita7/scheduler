@@ -35,16 +35,16 @@ export async function getAccountsOverview(): Promise<AccountsOverview> {
     supabase
       .from("social_accounts")
       .select(
-        "id, user_id, provider, provider_account_id, display_name, avatar_url, email, scopes, status, token_expires_at, refresh_token_expires_at, last_refreshed_at, last_error, connected_at, created_at, updated_at",
+        "id, workspace_id, user_id, provider, provider_account_id, display_name, avatar_url, email, scopes, status, token_expires_at, refresh_token_expires_at, last_refreshed_at, last_error, connected_at, created_at, updated_at",
       )
-      .eq("user_id", session.user.id)
+      .eq("workspace_id", session.workspace.id)
       .order("created_at", { ascending: true }),
     supabase
       .from("social_pages")
       .select(
-        "id, user_id, social_account_id, provider_page_id, name, vanity_name, logo_url, page_type, role, can_publish, status, created_at, updated_at",
+        "id, workspace_id, user_id, social_account_id, provider, provider_page_id, name, vanity_name, logo_url, page_type, role, can_publish, status, created_at, updated_at",
       )
-      .eq("user_id", session.user.id)
+      .eq("workspace_id", session.workspace.id)
       .order("name", { ascending: true }),
   ]);
 
@@ -66,50 +66,64 @@ export function buildTargets(
   const targets: PublishTargetOption[] = [];
 
   for (const account of accounts) {
-    const memberScope = hasScope(account.scopes, LINKEDIN_MEMBER_SCOPE);
-    targets.push({
-      value: encodeTarget(account.id),
-      accountId: account.id,
-      pageId: null,
-      targetType: "member",
-      label: account.display_name,
-      subtitle: "Personal profile",
-      avatarUrl: account.avatar_url,
-      canPublish: account.status === "connected" && Boolean(memberScope),
-      disabledReason:
-        account.status !== "connected"
-          ? "Reconnect this LinkedIn account."
-          : !memberScope
-            ? "Missing w_member_social permission."
-            : undefined,
-    });
+    // Meta's Graph API cannot publish to personal profiles, so a Facebook
+    // account only exposes its Pages. LinkedIn keeps the member target.
+    if (account.provider === "linkedin") {
+      const memberScope = hasScope(account.scopes, LINKEDIN_MEMBER_SCOPE);
+      targets.push({
+        value: encodeTarget(account.id),
+        accountId: account.id,
+        pageId: null,
+        targetType: "member",
+        platform: "linkedin",
+        label: account.display_name,
+        subtitle: "Personal profile",
+        avatarUrl: account.avatar_url,
+        canPublish: account.status === "connected" && Boolean(memberScope),
+        disabledReason:
+          account.status !== "connected"
+            ? "Reconnect this LinkedIn account."
+            : !memberScope
+              ? "Missing w_member_social permission."
+              : undefined,
+      });
+    }
 
     for (const page of pages.filter((item) => item.social_account_id === account.id)) {
+      const isFacebook = account.provider === "facebook";
       const orgScope = hasOrganizationPublishScope(account.scopes);
       const adminScope = hasOrganizationAdminScope(account.scopes);
+      const ready = isFacebook
+        ? account.status === "connected" && page.can_publish
+        : account.status === "connected" &&
+          Boolean(orgScope) &&
+          Boolean(adminScope) &&
+          page.can_publish;
+
       targets.push({
         value: encodeTarget(account.id, page.id),
         accountId: account.id,
         pageId: page.id,
         targetType: "organization",
+        platform: account.provider,
         label: page.name,
-        subtitle: `Company page${page.role ? ` · ${formatRole(page.role)}` : ""}`,
+        subtitle: isFacebook
+          ? "Facebook Page"
+          : `Company page${page.role ? ` · ${formatRole(page.role)}` : ""}`,
         avatarUrl: page.logo_url,
-        canPublish:
-          account.status === "connected" &&
-          Boolean(orgScope) &&
-          Boolean(adminScope) &&
-          page.can_publish,
+        canPublish: ready,
         disabledReason:
           account.status !== "connected"
-            ? "Reconnect this LinkedIn account."
-            : !orgScope
-              ? "LinkedIn has not granted w_organization_social."
-              : !adminScope
-                ? "LinkedIn has not granted r_organization_admin."
-                : !page.can_publish
-                  ? "Your LinkedIn member needs a Super Admin or Content Admin role on this page."
-                  : undefined,
+            ? `Reconnect this ${isFacebook ? "Facebook" : "LinkedIn"} account.`
+            : isFacebook
+              ? "You need a Facebook Page role that can create content."
+              : !orgScope
+                ? "LinkedIn has not granted w_organization_social."
+                : !adminScope
+                  ? "LinkedIn has not granted r_organization_admin."
+                  : !page.can_publish
+                    ? "Your LinkedIn member needs a Super Admin or Content Admin role on this page."
+                    : undefined,
       });
     }
   }
@@ -129,30 +143,68 @@ export function targetLabel(
   post: { target_type: string; account?: { display_name: string } | null; page?: { name: string } | null },
 ) {
   if (post.target_type === "organization" && post.page) return post.page.name;
-  return post.account?.display_name ?? "LinkedIn profile";
+  return post.account?.display_name ?? "Publishing profile";
 }
 
-/** Validate that a target belongs to the signed-in user before writing. */
+/** Validate that a target belongs to the active workspace before writing. */
 export async function resolveTarget(
-  userId: string,
+  workspaceId: string,
   accountId: string,
   pageId: string | null,
 ) {
   const supabase = await createClient();
   const { data: account } = await supabase
     .from("social_accounts")
-    .select("id, user_id, provider_account_id, scopes, status, display_name")
+    .select("id, workspace_id, user_id, provider, provider_account_id, scopes, status, display_name")
     .eq("id", accountId)
-    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId)
     .maybeSingle();
 
   if (!account) {
-    return { ok: false as const, error: "That LinkedIn account is not connected to your workspace." };
+    return { ok: false as const, error: "That social account is not connected to your workspace." };
   }
   if (account.status !== "connected") {
     return {
       ok: false as const,
-      error: "Reconnect your LinkedIn account before scheduling new posts.",
+      error: "Reconnect this account before scheduling new posts.",
+    };
+  }
+
+  // Facebook: only Pages can be published to. Personal profiles are not
+  // supported by the Graph API, so a page is always required.
+  if (account.provider === "facebook") {
+    if (!pageId) {
+      return {
+        ok: false as const,
+        error: "Choose a Facebook Page. Facebook personal profiles cannot be posted to automatically.",
+      };
+    }
+
+    const { data: page } = await supabase
+      .from("social_pages")
+      .select("id, workspace_id, user_id, social_account_id, provider_page_id, name, can_publish")
+      .eq("id", pageId)
+      .eq("workspace_id", workspaceId)
+      .eq("social_account_id", accountId)
+      .eq("provider", "facebook")
+      .maybeSingle();
+
+    if (!page) {
+      return { ok: false as const, error: "That Facebook Page is not connected to your workspace." };
+    }
+    if (!page.can_publish) {
+      return {
+        ok: false as const,
+        error:
+          "Your Facebook user needs a Page role that can create content (CREATE_CONTENT) before LINKFLOW can publish to it.",
+      };
+    }
+
+    return {
+      ok: true as const,
+      targetType: "organization" as const,
+      account,
+      page,
     };
   }
 
@@ -173,10 +225,11 @@ export async function resolveTarget(
 
   const { data: page } = await supabase
     .from("social_pages")
-    .select("id, user_id, social_account_id, provider_page_id, name, can_publish")
+    .select("id, workspace_id, user_id, social_account_id, provider_page_id, name, can_publish")
     .eq("id", pageId)
-    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId)
     .eq("social_account_id", accountId)
+    .eq("provider", "linkedin")
     .maybeSingle();
 
   if (!page) {

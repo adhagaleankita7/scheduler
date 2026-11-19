@@ -5,7 +5,7 @@ export const MAX_POST_LENGTH = 3000;
 
 export const targetValueSchema = z
   .string()
-  .regex(/^[0-9a-f-]{36}(\|[0-9a-f-]{36})?$/i, "Choose a LinkedIn target");
+  .regex(/^[0-9a-f-]{36}(\|[0-9a-f-]{36})?$/i, "Choose a publishing target");
 
 export function encodeTarget(accountId: string, pageId?: string | null) {
   return pageId ? `${accountId}|${pageId}` : accountId;
@@ -20,7 +20,7 @@ export const postContentSchema = z
   .string()
   .trim()
   .min(1, "Write something to share")
-  .max(MAX_POST_LENGTH, `LinkedIn posts can be at most ${MAX_POST_LENGTH.toLocaleString()} characters`);
+  .max(MAX_POST_LENGTH, `Posts can be at most ${MAX_POST_LENGTH.toLocaleString()} characters`);
 
 export const isoDateTimeSchema = z
   .string()
@@ -46,13 +46,16 @@ export const weeklyPlanEntrySchema = z.object({
   dateKey: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date"),
   time: z.string().refine((value) => normalizeTime(value) !== null, "Invalid time"),
   content: z.string().trim().max(MAX_POST_LENGTH).optional().default(""),
+  mediaPath: z.string().max(500).optional().nullable(),
+  mediaMimeType: z.string().max(100).optional().nullable(),
+  mediaAlt: z.string().max(300).optional().nullable(),
 });
 
 export const scheduleWeekSchema = z.object({
-  name: z.string().trim().min(1).max(80).default("7-day LinkedIn plan"),
+  name: z.string().trim().min(1).max(80).default("Publishing plan"),
   timezone: z.string().refine(isValidTimeZone, "Invalid timezone"),
   target: targetValueSchema,
-  entries: z.array(weeklyPlanEntrySchema).min(1).max(7),
+  entries: z.array(weeklyPlanEntrySchema).min(1).max(30),
   action: z.enum(["schedule", "draft"]).default("schedule"),
 });
 

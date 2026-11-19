@@ -51,13 +51,14 @@ export async function updateSettings(input: {
 
   const { error: queueError } = await supabase.from("queue_settings").upsert(
     {
+      workspace_id: session.workspace.id,
       user_id: session.user.id,
       timezone: data.timezone,
       posting_days: days,
       posting_times: [`${time}:00`],
       is_paused: data.queuePaused ?? false,
     },
-    { onConflict: "user_id" },
+    { onConflict: "workspace_id" },
   );
 
   if (queueError) {

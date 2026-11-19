@@ -7,7 +7,7 @@ LINKFLOW has four layers of verification:
 | Type + lint | `npm run typecheck`, `npm run lint` | Node | The codebase compiles and follows the lint rules. |
 | Unit/integration | `npm run test` | Node | Scheduling math, validation, LinkedIn publishing core. |
 | Database (pgTAP) | `npm run test:db` | Supabase CLI + Docker | RLS isolation, engine-field protection, atomic claims, retries. |
-| Workflow script | `npm run verify:workflow` | Node + `.env.local` (optional) | The 7-day plan, calendar windows, retry table, and honest mock behaviour. |
+| Workflow script | `npm run verify:workflow` | Node + `.env.local` (optional) | The 7- and 30-day plans, calendar windows, retry table, and honest mock behaviour. |
 
 Manual verification against a real Supabase project and a real LinkedIn app is described at the end.
 **No test in this repository claims that real LinkedIn publishing has happened.** Only an approved
@@ -28,7 +28,7 @@ The suite lives in `tests/` and imports the same modules the app and Edge Functi
 | File | Covers |
 | --- | --- |
 | `tests/scheduling/timezone.test.ts` | Time normalization, IANA validation, date keys, weekday mapping, UTC conversion, DST edges, formatting, `datetime-local` round-trips. |
-| `tests/scheduling/slots.test.ts` | Next-N queue slots, past-slot skipping, weekday filters, start-after, horizon guard, 7-day plan, week schedule, upcoming Monday, sort order. |
+| `tests/scheduling/slots.test.ts` | Next-N queue slots, past-slot skipping, weekday filters, start-after, horizon guard, 7- and 30-day plans, week schedule, upcoming Monday, sort order. |
 | `tests/scheduling/calendar.test.ts` | Monday-based week starts, month clamping, 42-day grids, in-period flags, exclusive range ends, view navigation. |
 | `tests/validation.test.ts` | Zod schemas for posts, weeks, reschedules, settings and queues; target encoding; code-point character counting. |
 | `tests/linkedin/publishing.test.ts` | Author URNs, payloads, image upload order, idempotency header, HTTP error classification, retryability, backoff, token refresh, mock labeling. |
@@ -120,8 +120,8 @@ npm run verify:workflow
 
 The script uses `tsx` and relative imports so it runs without the Next.js bundler. It verifies:
 
-1. Seven consecutive days, each at 10:00 Asia/Kolkata, stored as `04:30Z` (or `14:00Z` in New York
-   after DST).
+1. Seven and thirty consecutive days, each at 10:00 Asia/Kolkata, stored as `04:30Z` (or `14:00Z` in
+   New York after DST).
 2. Calendar grids are Monday-based, 42 days for a month view, with monospaced in-period flags.
 3. The full LinkedIn error table (`401`, `403`, `429`, `400`, `409`, `5xx`) maps to the documented
    retry decision.
@@ -179,8 +179,8 @@ LinkedIn HTTP calls are skipped. It also lets you connect without a LinkedIn app
 4. Sign up and open `/accounts` → **Connect mock LinkedIn**. The route creates a connected account
    with a `mock_member_` provider id and a dummy token in Vault, then shows the **Mock** badge and a
    banner explaining that nothing reaches LinkedIn.
-5. Open `/planner`, write seven posts, choose 10:00 AM, and click **Schedule all**.
-6. Open `/queue` and confirm seven scheduled posts, one per day.
+5. Open `/planner/month`, write thirty posts, choose 10:00 AM, and click **Schedule all**.
+6. Open `/queue` and confirm thirty scheduled posts, one per day.
 7. Create one post a minute or two out, then invoke the function (or wait for cron):
    `POST /functions/v1/publish-scheduled-posts` with `x-cron-secret`.
 8. Confirm the post becomes `published` with `is_mock = true` and a `mock_` provider id, and that
@@ -192,6 +192,11 @@ Function and cron/Vault checks still matter.
 
 Mock results must never be described as real. The Edge Function refuses to start when
 `LINKEDIN_MOCK_MODE=true` and `LINKFLOW_ENV=production`.
+
+You do not need a non-production worker to test against the hosted project: a `mock_member_` /
+`mock_facebook_` account is always published in simulation, whatever the worker's env says, because
+its dummy token can never resolve at the provider. Handy when the UI runs locally but cron uses the
+hosted function. Those runs are still logged with provider `mock` and `is_mock = true`.
 
 ---
 

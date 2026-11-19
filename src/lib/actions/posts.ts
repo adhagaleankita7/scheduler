@@ -39,6 +39,27 @@ async function removeStorageObject(
   await supabase.storage.from("post-media").remove([path]);
 }
 
+/**
+ * A collaborator may attach an image they uploaded themselves, or reuse an
+ * image that already belongs to a post in the shared workspace (for example
+ * when editing a post the owner created).
+ */
+async function canUseMediaPath(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workspaceId: string,
+  userId: string,
+  path: string,
+) {
+  if (path.startsWith(`${userId}/`)) return true;
+  const { data } = await supabase
+    .from("post_media")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("storage_path", path)
+    .maybeSingle();
+  return Boolean(data);
+}
+
 function revalidateWorkspace() {
   revalidatePath("/dashboard");
   revalidatePath("/posts");
@@ -77,10 +98,11 @@ export async function savePost(
   }
   const data = parsed.data;
   const { accountId, pageId } = decodeTarget(data.target);
-  const target = await resolveTarget(session.user.id, accountId, pageId);
+  const target = await resolveTarget(session.workspace.id, accountId, pageId);
   if (!target.ok) return { ok: false, error: target.error };
 
   const supabase = await createClient();
+  const workspaceId = session.workspace.id;
   const now = new Date();
 
   let scheduledFor: string | null = null;
@@ -109,7 +131,7 @@ export async function savePost(
   }
 
   if (data.mediaPath) {
-    if (!data.mediaPath.startsWith(`${session.user.id}/`)) {
+    if (!(await canUseMediaPath(supabase, workspaceId, session.user.id, data.mediaPath))) {
       return { ok: false, error: "The uploaded image does not belong to your workspace." };
     }
     if (!data.mediaMimeType || !["image/jpeg", "image/png", "image/webp"].includes(data.mediaMimeType)) {
@@ -122,7 +144,7 @@ export async function savePost(
       .from("posts")
       .select("*")
       .eq("id", data.id)
-      .eq("user_id", session.user.id)
+      .eq("workspace_id", workspaceId)
       .maybeSingle<Post>();
 
     if (!existing) return { ok: false, error: "That post could not be found." };
@@ -147,7 +169,7 @@ export async function savePost(
         status,
       })
       .eq("id", data.id)
-      .eq("user_id", session.user.id)
+      .eq("workspace_id", workspaceId)
       .eq("status", existing.status)
       .select("id");
 
@@ -164,13 +186,15 @@ export async function savePost(
         .from("post_media")
         .select("storage_path")
         .eq("post_id", data.id)
+        .eq("workspace_id", workspaceId)
         .maybeSingle();
       if (oldMedia?.storage_path && oldMedia.storage_path !== data.mediaPath) {
         await removeStorageObject(supabase, oldMedia.storage_path);
-        await supabase.from("post_media").delete().eq("post_id", data.id).eq("user_id", session.user.id);
+        await supabase.from("post_media").delete().eq("post_id", data.id).eq("workspace_id", workspaceId);
       }
       const { error: mediaError } = await supabase.from("post_media").upsert(
         {
+          workspace_id: workspaceId,
           post_id: data.id,
           user_id: session.user.id,
           storage_path: data.mediaPath,
@@ -187,10 +211,11 @@ export async function savePost(
         .from("post_media")
         .select("storage_path")
         .eq("post_id", data.id)
+        .eq("workspace_id", workspaceId)
         .maybeSingle();
       if (oldMedia?.storage_path) {
         await removeStorageObject(supabase, oldMedia.storage_path);
-        await supabase.from("post_media").delete().eq("post_id", data.id).eq("user_id", session.user.id);
+        await supabase.from("post_media").delete().eq("post_id", data.id).eq("workspace_id", workspaceId);
       }
     }
 
@@ -205,6 +230,7 @@ export async function savePost(
   const { data: created, error } = await supabase
     .from("posts")
     .insert({
+      workspace_id: workspaceId,
       user_id: session.user.id,
       content: data.content,
       target_type: target.targetType,
@@ -223,6 +249,7 @@ export async function savePost(
 
   if (data.mediaPath) {
     const { error: mediaError } = await supabase.from("post_media").insert({
+      workspace_id: workspaceId,
       post_id: created.id,
       user_id: session.user.id,
       storage_path: data.mediaPath,
@@ -230,7 +257,7 @@ export async function savePost(
       alt_text: data.mediaAlt?.slice(0, 300) || null,
     });
     if (mediaError) {
-      await supabase.from("posts").delete().eq("id", created.id);
+      await supabase.from("posts").delete().eq("id", created.id).eq("workspace_id", workspaceId);
       return { ok: false, error: `Could not attach the image: ${mediaError.message}` };
     }
   }
@@ -261,48 +288,76 @@ export async function scheduleWeek(
   if (!parsed.success) {
     return {
       ok: false,
-      error: "Please check your 7-day plan.",
+      error: "Please check your publishing plan.",
       fieldErrors: fieldErrorsFrom(parsed.error),
     };
   }
   const data = parsed.data;
   const { accountId, pageId } = decodeTarget(data.target);
-  const target = await resolveTarget(session.user.id, accountId, pageId);
+  const target = await resolveTarget(session.workspace.id, accountId, pageId);
   if (!target.ok) return { ok: false, error: target.error };
 
-  const entries = data.entries.filter((entry) => entry.content.trim().length > 0);
+  const supabase = await createClient();
+  const workspaceId = session.workspace.id;
+
+  const entries = data.entries
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.content.trim().length > 0);
   if (entries.length === 0) {
     return { ok: false, error: "Add content to at least one day before scheduling." };
   }
 
   const now = new Date();
   const fieldErrors: Record<string, string> = {};
-  const rows = entries.map((entry, index) => {
-    const content = entry.content.trim();
-    if (content.length > MAX_POST_LENGTH) {
-      fieldErrors[`entries.${index}.content`] = `Keep posts under ${MAX_POST_LENGTH.toLocaleString()} characters.`;
-    }
-    let instant: string | null = null;
-    try {
-      instant = fromZonedTime(
-        `${entry.dateKey}T${entry.time}:00`,
-        data.timezone,
-      ).toISOString();
-    } catch {
-      fieldErrors[`entries.${index}.time`] = "Invalid date/time.";
-    }
-    if (instant && new Date(instant).getTime() < now.getTime() - 30_000) {
-      fieldErrors[`entries.${index}.time`] = "This slot is in the past. Move it forward.";
-    }
-    return { entry, content, instant };
-  });
+  const rows = await Promise.all(
+    entries.map(async ({ entry, index: entryIndex }) => {
+      const content = entry.content.trim();
+      if (content.length > MAX_POST_LENGTH) {
+        fieldErrors[`entries.${entryIndex}.content`] = `Keep posts under ${MAX_POST_LENGTH.toLocaleString()} characters.`;
+      }
+      let instant: string | null = null;
+      try {
+        instant = fromZonedTime(
+          `${entry.dateKey}T${entry.time}:00`,
+          data.timezone,
+        ).toISOString();
+      } catch {
+        fieldErrors[`entries.${entryIndex}.time`] = "Invalid date/time.";
+      }
+      if (instant && new Date(instant).getTime() < now.getTime() - 30_000) {
+        fieldErrors[`entries.${entryIndex}.time`] = "This slot is in the past. Move it forward.";
+      }
+
+      const mediaPath = entry.mediaPath?.trim() || null;
+      const mediaMimeType = entry.mediaMimeType?.trim() || null;
+      if (mediaPath) {
+        if (!(await canUseMediaPath(supabase, workspaceId, session.user.id, mediaPath))) {
+          fieldErrors[`entries.${entryIndex}.mediaPath`] =
+            "That image does not belong to your workspace.";
+        } else if (
+          !mediaMimeType ||
+          !["image/jpeg", "image/png", "image/webp"].includes(mediaMimeType)
+        ) {
+          fieldErrors[`entries.${entryIndex}.mediaMimeType`] = "Images must be JPEG, PNG or WebP.";
+        }
+      }
+
+      return {
+        entry,
+        content,
+        instant,
+        mediaPath,
+        mediaMimeType,
+        mediaAlt: entry.mediaAlt?.trim() || null,
+      };
+    }),
+  );
 
   if (Object.keys(fieldErrors).length > 0) {
     return { ok: false, error: "Some posts have invalid content or times.", fieldErrors };
   }
 
   // Times arrive as UTC ISO strings from the client; recompute defensively.
-  const supabase = await createClient();
   const ids = rows.map(() => crypto.randomUUID());
   const startDate = data.entries[0]?.dateKey ?? new Date().toISOString().slice(0, 10);
   const endDate = data.entries[data.entries.length - 1]?.dateKey ?? startDate;
@@ -310,6 +365,7 @@ export async function scheduleWeek(
   const { data: schedule, error: scheduleError } = await supabase
     .from("publishing_schedules")
     .insert({
+      workspace_id: workspaceId,
       user_id: session.user.id,
       name: data.name,
       timezone: data.timezone,
@@ -324,13 +380,14 @@ export async function scheduleWeek(
     .single();
 
   if (scheduleError || !schedule) {
-    return { ok: false, error: `Could not create the weekly plan: ${scheduleError?.message ?? ""}` };
+    return { ok: false, error: `Could not create the publishing plan: ${scheduleError?.message ?? ""}` };
   }
 
   // Wall-clock times are converted to UTC on the server using the selected
   // IANA timezone, so client clocks/timezones are never trusted.
   const rowsPayload = rows.map(({ content, instant }, index) => ({
     id: ids[index],
+    workspace_id: workspaceId,
     user_id: session.user.id,
     content,
     target_type: target.targetType,
@@ -344,8 +401,36 @@ export async function scheduleWeek(
 
   const { error: postError } = await supabase.from("posts").insert(rowsPayload);
   if (postError) {
-    await supabase.from("publishing_schedules").delete().eq("id", schedule.id).eq("user_id", session.user.id);
+    await supabase.from("publishing_schedules").delete().eq("id", schedule.id).eq("workspace_id", workspaceId);
     return { ok: false, error: `Could not schedule the posts: ${postError.message}` };
+  }
+
+  const mediaPayload = rows.flatMap(({ mediaPath, mediaMimeType, mediaAlt }, index) =>
+    mediaPath
+      ? [
+          {
+            workspace_id: workspaceId,
+            post_id: ids[index],
+            user_id: session.user.id,
+            storage_path: mediaPath,
+            mime_type: mediaMimeType!,
+            alt_text: mediaAlt?.slice(0, 300) || null,
+          },
+        ]
+      : [],
+  );
+
+  if (mediaPayload.length > 0) {
+    const { error: mediaError } = await supabase.from("post_media").insert(mediaPayload);
+    if (mediaError) {
+      await supabase.from("posts").delete().in("id", ids).eq("workspace_id", workspaceId);
+      await supabase
+        .from("publishing_schedules")
+        .delete()
+        .eq("id", schedule.id)
+        .eq("workspace_id", workspaceId);
+      return { ok: false, error: `Could not attach the images: ${mediaError.message}` };
+    }
   }
 
   if (data.action === "schedule") await nudgeScheduler();
@@ -374,11 +459,12 @@ export async function reschedulePost(
   }
 
   const supabase = await createClient();
+  const workspaceId = session.workspace.id;
   const { data: post } = await supabase
     .from("posts")
     .select("id, status, user_id")
     .eq("id", postId)
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", workspaceId)
     .maybeSingle<Post>();
 
   if (!post) return { ok: false, error: "That post could not be found." };
@@ -408,7 +494,7 @@ export async function reschedulePost(
       locked_by: null,
     })
     .eq("id", postId)
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", workspaceId)
     .eq("status", post.status)
     .select("id");
 
@@ -428,18 +514,19 @@ export async function retryPost(postId: string): Promise<ActionResult> {
   if (!z.string().uuid().safeParse(postId).success) return { ok: false, error: "Invalid post." };
 
   const supabase = await createClient();
+  const workspaceId = session.workspace.id;
   const { data: post } = await supabase
     .from("posts")
     .select("*")
     .eq("id", postId)
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", workspaceId)
     .maybeSingle<Post>();
   if (!post) return { ok: false, error: "That post could not be found." };
   if (post.status !== "failed" && post.status !== "cancelled") {
     return { ok: false, error: "Only failed or cancelled posts can be retried." };
   }
   if (!post.social_account_id) {
-    return { ok: false, error: "Reconnect LinkedIn before retrying this post." };
+    return { ok: false, error: "Reconnect the account before retrying this post." };
   }
   if (!isServiceRoleConfigured()) {
     return {
@@ -464,7 +551,7 @@ export async function retryPost(postId: string): Promise<ActionResult> {
       locked_by: null,
     })
     .eq("id", postId)
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", workspaceId)
     .in("status", ["failed", "cancelled"])
     .select("id");
 
@@ -486,7 +573,7 @@ export async function cancelPost(postId: string): Promise<ActionResult> {
     .from("posts")
     .update({ status: "cancelled" })
     .eq("id", postId)
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", session.workspace.id)
     .in("status", ["draft", "scheduled", "failed"])
     .select("id");
   if (error) return { ok: false, error: `Could not cancel: ${error.message}` };
@@ -506,14 +593,14 @@ export async function deletePost(postId: string): Promise<ActionResult> {
     .from("post_media")
     .select("storage_path")
     .eq("post_id", postId)
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", session.workspace.id)
     .maybeSingle();
 
   const { error } = await supabase
     .from("posts")
     .delete()
     .eq("id", postId)
-    .eq("user_id", session.user.id);
+    .eq("workspace_id", session.workspace.id);
 
   if (error) return { ok: false, error: `Could not delete: ${error.message}` };
   if (media?.storage_path) await removeStorageObject(supabase, media.storage_path);
@@ -526,11 +613,12 @@ export async function duplicatePost(postId: string): Promise<ActionResult<{ id: 
   if (session.demo) return { ok: false, error: DEMO_ERROR };
 
   const supabase = await createClient();
+  const workspaceId = session.workspace.id;
   const { data: source } = await supabase
     .from("posts")
     .select("*")
     .eq("id", postId)
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", workspaceId)
     .maybeSingle<Post>();
   if (!source) return { ok: false, error: "That post could not be found." };
 
@@ -543,6 +631,7 @@ export async function duplicatePost(postId: string): Promise<ActionResult<{ id: 
   const { data: created, error } = await supabase
     .from("posts")
     .insert({
+      workspace_id: workspaceId,
       user_id: session.user.id,
       content: source.content,
       target_type: source.target_type,
@@ -562,7 +651,7 @@ export async function duplicatePost(postId: string): Promise<ActionResult<{ id: 
       .from("post-media")
       .download(media.storage_path);
     if (downloadError || !file) {
-      await supabase.from("posts").delete().eq("id", created.id).eq("user_id", session.user.id);
+      await supabase.from("posts").delete().eq("id", created.id).eq("workspace_id", workspaceId);
       return { ok: false, error: "Could not copy the attached image. Try duplicating without it." };
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -571,10 +660,11 @@ export async function duplicatePost(postId: string): Promise<ActionResult<{ id: 
       upsert: false,
     });
     if (uploadError) {
-      await supabase.from("posts").delete().eq("id", created.id).eq("user_id", session.user.id);
+      await supabase.from("posts").delete().eq("id", created.id).eq("workspace_id", workspaceId);
       return { ok: false, error: `Could not copy the attached image: ${uploadError.message}` };
     }
     const { error: mediaInsertError } = await supabase.from("post_media").insert({
+      workspace_id: workspaceId,
       post_id: created.id,
       user_id: session.user.id,
       storage_path: newPath,
@@ -583,7 +673,7 @@ export async function duplicatePost(postId: string): Promise<ActionResult<{ id: 
     });
     if (mediaInsertError) {
       await supabase.storage.from("post-media").remove([newPath]);
-      await supabase.from("posts").delete().eq("id", created.id).eq("user_id", session.user.id);
+      await supabase.from("posts").delete().eq("id", created.id).eq("workspace_id", workspaceId);
       return { ok: false, error: `Could not copy the attached image: ${mediaInsertError.message}` };
     }
   }

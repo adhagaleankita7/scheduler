@@ -6,15 +6,18 @@ import { usePathname } from "next/navigation";
 import { CalendarRange, ChevronRight, Menu, Sparkles, X } from "lucide-react";
 import { NAV_ITEMS, SETTINGS_ITEM } from "@/components/layout/nav-config";
 import { Logo } from "@/components/brand/logo";
+import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { initials } from "@/lib/utils";
-import type { Profile } from "@/lib/types";
+import type { Profile, Workspace } from "@/lib/types";
 
 type Props = {
   profile: Pick<Profile, "full_name" | "avatar_url">;
   email: string | null;
   demo: boolean;
+  workspace: Workspace;
+  workspaces: Workspace[];
 };
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
@@ -22,8 +25,9 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav className="flex flex-1 flex-col gap-1">
       {NAV_ITEMS.map((item) => {
-        const active =
-          item.href === "/dashboard" ? pathname === item.href : pathname.startsWith(item.href);
+        const active = item.exact
+          ? pathname === item.href
+          : pathname === item.href || pathname.startsWith(`${item.href}/`);
         const Icon = item.icon;
         return (
           <Link
@@ -49,9 +53,9 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
               strokeWidth={active ? 2.3 : 2}
             />
             <span className="truncate">{item.label}</span>
-            {item.featured && (
+            {item.badge && (
               <span className="ml-auto rounded-full border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-primary uppercase">
-                7d
+                {item.badge}
               </span>
             )}
           </Link>
@@ -85,7 +89,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 function PlannerCard({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <Link
-      href="/planner"
+      href="/planner/month"
       onClick={onNavigate}
       className="group relative mb-4 overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/10 via-brand-violet/8 to-transparent p-3.5 transition-all hover:border-primary/30 hover:shadow-glow"
     >
@@ -94,20 +98,20 @@ function PlannerCard({ onNavigate }: { onNavigate?: () => void }) {
         <span className="brand-gradient grid size-7 place-items-center rounded-lg text-white">
           <CalendarRange className="size-3.5" />
         </span>
-        <span className="text-[12px] font-semibold">Plan a full week</span>
+        <span className="text-[12px] font-semibold">Plan a full month</span>
         <ChevronRight className="ml-auto size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
       </div>
       <p className="text-muted-foreground text-[11.5px] leading-relaxed">
-        Write seven posts once. LINKFLOW publishes one every day.
+        Write thirty posts once. LINKFLOW publishes one every day.
       </p>
       <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
-        <Sparkles className="size-3" /> 7-day workflow
+        <Sparkles className="size-3" /> 30-day workflow
       </span>
     </Link>
   );
 }
 
-function UserBlock({ profile, email, demo }: Props) {
+function UserBlock({ profile, email, demo }: Pick<Props, "profile" | "email" | "demo">) {
   return (
     <div className="flex items-center gap-3 rounded-xl px-1 py-2">
       <Avatar className="size-9 ring-2 ring-background">
@@ -132,10 +136,12 @@ export function DesktopSidebar({
   profile,
   email,
   demo,
+  workspace,
+  workspaces,
 }: Props) {
   return (
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-[268px] flex-col border-r border-sidebar-border bg-sidebar px-3.5 py-5 lg:flex">
-      <div className="mb-7 flex items-center px-2">
+      <div className="mb-4 flex items-center px-2">
         <Link href="/dashboard" aria-label="LINKFLOW dashboard">
           <Logo />
         </Link>
@@ -143,6 +149,11 @@ export function DesktopSidebar({
           BETA
         </span>
       </div>
+      <WorkspaceSwitcher
+        workspaces={workspaces}
+        activeId={workspace.id}
+        demo={demo}
+      />
       <NavLinks />
       <PlannerCard />
       <div className="border-t border-sidebar-border pt-3">
@@ -152,7 +163,7 @@ export function DesktopSidebar({
   );
 }
 
-export function MobileSidebar({ profile, email, demo }: Props) {
+export function MobileSidebar({ profile, email, demo, workspace, workspaces }: Props) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -200,7 +211,7 @@ export function MobileSidebar({ profile, email, demo }: Props) {
             open ? "translate-x-0" : "-translate-x-full",
           )}
         >
-          <div className="mb-7 flex items-center justify-between px-1">
+          <div className="mb-4 flex items-center justify-between px-1">
             <Logo />
             <button
               type="button"
@@ -211,6 +222,11 @@ export function MobileSidebar({ profile, email, demo }: Props) {
               <X className="size-4" />
             </button>
           </div>
+          <WorkspaceSwitcher
+            workspaces={workspaces}
+            activeId={workspace.id}
+            demo={demo}
+          />
           <NavLinks onNavigate={() => setOpen(false)} />
           <PlannerCard onNavigate={() => setOpen(false)} />
           <div className="border-t border-sidebar-border pt-3">

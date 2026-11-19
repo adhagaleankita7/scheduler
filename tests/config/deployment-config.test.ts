@@ -72,7 +72,9 @@ describe("publishing Edge Function safety", () => {
   });
 
   it("refuses mock publishing in production", () => {
-    expect(edgeFunction).toContain('mock && env("LINKFLOW_ENV") === "production"');
+    expect(edgeFunction).toContain('env("LINKFLOW_ENV") === "production"');
+    expect(edgeFunction).toContain('env("LINKEDIN_MOCK_MODE") === "true"');
+    expect(edgeFunction).toContain('env("FACEBOOK_MOCK_MODE") === "true"');
     expect(edgeFunction).toContain("Refusing to run");
   });
 

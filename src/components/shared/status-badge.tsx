@@ -16,7 +16,7 @@ const STATUS_CONFIG: Record<
   draft: { label: "Draft", variant: "muted", icon: CircleDashed },
   scheduled: { label: "Scheduled", variant: "info", icon: Clock3 },
   processing: { label: "Publishing", variant: "violet", icon: Loader2 },
-  published: { label: "Published", variant: "success", icon: CheckCircle2 },
+  published: { label: "Posted", variant: "success", icon: CheckCircle2 },
   failed: { label: "Failed", variant: "danger", icon: TriangleAlert },
   cancelled: { label: "Cancelled", variant: "outline", icon: Ban },
 };

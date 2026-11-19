@@ -24,12 +24,12 @@ export const metadata: Metadata = {
     template: "%s · LINKFLOW",
   },
   description:
-    "Plan a week of LinkedIn posts in minutes and let LINKFLOW publish them automatically. Premium analytics, calendar, queue and company page support.",
+    "Plan a month of LinkedIn posts in minutes and let LINKFLOW publish them automatically. Premium analytics, calendar, queue and company page support.",
   keywords: ["LinkedIn scheduler", "LinkedIn queue", "social media scheduling", "Buffer alternative", "LinkedIn company page"],
   openGraph: {
     title: "LINKFLOW — LinkedIn scheduling that runs itself",
     description:
-      "Plan a week of LinkedIn posts in minutes. Publish every day at the right time, automatically.",
+      "Plan a month of LinkedIn posts in minutes. Publish every day at the right time, automatically.",
     type: "website",
   },
   twitter: { card: "summary_large_image", title: "LINKFLOW" },

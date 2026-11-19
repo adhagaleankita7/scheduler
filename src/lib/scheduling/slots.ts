@@ -71,6 +71,35 @@ export function nextQueueSlots(options: SlotOptions): QueueSlot[] {
   return slots;
 }
 
+/** Plan lengths offered by the planner (a week or a month). */
+export const PLAN_LENGTHS = [7, 30] as const;
+export type PlanLength = (typeof PLAN_LENGTHS)[number];
+export const MAX_PLAN_DAYS = 30;
+
+/** Build consecutive days starting on `startDate` (inclusive). */
+export function buildDayPlan(input: {
+  startDate: string;
+  timeZone: string;
+  time: string;
+  contents: string[];
+  days: number;
+  postingDays?: number[];
+}) {
+  const days = Math.min(MAX_PLAN_DAYS, Math.max(1, Math.trunc(input.days)));
+  const postingDays = input.postingDays ?? [1, 2, 3, 4, 5, 6, 7];
+  const entries: WeeklyPlanEntry[] = [];
+  for (let index = 0; index < days; index += 1) {
+    const dateKey = addDaysToDateKey(input.startDate, index);
+    if (!postingDays.includes(weekdayOfDateKey(dateKey))) continue;
+    entries.push({
+      dateKey,
+      time: input.time,
+      content: input.contents[index] ?? "",
+    });
+  }
+  return entries;
+}
+
 /** Build seven consecutive days starting on `startDate` (inclusive). */
 export function buildSevenDayPlan(input: {
   startDate: string;
@@ -79,18 +108,7 @@ export function buildSevenDayPlan(input: {
   contents: string[];
   postingDays?: number[];
 }) {
-  const days = input.postingDays ?? [1, 2, 3, 4, 5, 6, 7];
-  const entries: WeeklyPlanEntry[] = [];
-  for (let index = 0; index < 7; index += 1) {
-    const dateKey = addDaysToDateKey(input.startDate, index);
-    if (!days.includes(weekdayOfDateKey(dateKey))) continue;
-    entries.push({
-      dateKey,
-      time: input.time,
-      content: input.contents[index] ?? "",
-    });
-  }
-  return entries;
+  return buildDayPlan({ ...input, days: 7 });
 }
 
 export type WeekdaySchedule = {

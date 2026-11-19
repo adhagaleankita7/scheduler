@@ -120,7 +120,7 @@ export function QueueView({ data }: { data: QueueData }) {
       return;
     }
     if (!selectedTarget?.canPublish) {
-      setContentError(selectedTarget?.disabledReason ?? "Choose a LinkedIn target that can publish.");
+      setContentError(selectedTarget?.disabledReason ?? "Choose a publishing target that can publish.");
       return;
     }
 
@@ -411,10 +411,10 @@ export function QueueView({ data }: { data: QueueData }) {
                   compact
                   icon={Clock3}
                   title="Nothing in the queue"
-                  description="Add a post above, promote a draft, or schedule a full week from the planner."
+                  description="Add a post above, promote a draft, or schedule a full month from the planner."
                   actions={
                     <Button asChild size="sm" variant="gradient">
-                      <Link href="/planner">Plan my week</Link>
+                      <Link href="/planner/month">Plan my month</Link>
                     </Button>
                   }
                 />

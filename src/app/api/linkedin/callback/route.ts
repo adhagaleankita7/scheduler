@@ -17,6 +17,7 @@ import {
 import {
   hasOrganizationAdminScope,
   hasOrganizationPublishScope,
+  isScopeRejection,
   shouldRetryWithoutOrganizationScopes,
   splitRequestedScopes,
 } from "@/lib/linkedin/scopes";
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (oauthError) {
-    if (oauthError === "invalid_scope") {
+    if (isScopeRejection(oauthError)) {
       // Organization scopes are gated behind Community Management API approval.
       // When this attempt asked for them, retry once with personal scopes so
       // sign-in and personal posting keep working while LinkedIn reviews the
@@ -54,6 +55,7 @@ export async function GET(request: NextRequest) {
           .from("oauth_states")
           .select("id, scopes")
           .eq("state", state)
+          .eq("provider", "linkedin")
           .maybeSingle();
         const attemptedScopes = parseScopeList(stateRow?.scopes);
         if (
@@ -103,7 +105,8 @@ export async function GET(request: NextRequest) {
     .delete()
     .eq("state", state)
     .eq("user_id", user.id)
-    .select("id, expires_at, scopes")
+    .eq("provider", "linkedin")
+    .select("id, expires_at, scopes, workspace_id")
     .maybeSingle();
 
   if (stateError || !stateRow) {
@@ -111,6 +114,21 @@ export async function GET(request: NextRequest) {
   }
   if (new Date(stateRow.expires_at).getTime() < Date.now()) {
     return failure(origin, "The LinkedIn connection request expired. Start again.");
+  }
+
+  // Older state rows have no workspace recorded; fall back to the profile's
+  // active workspace so the new account still lands in the right place.
+  let workspaceId = stateRow.workspace_id;
+  if (!workspaceId) {
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("active_workspace_id")
+      .eq("id", user.id)
+      .maybeSingle();
+    workspaceId = profile?.active_workspace_id ?? null;
+  }
+  if (!workspaceId) {
+    return failure(origin, "No active workspace was found for this connection. Open the workspace and try again.");
   }
 
   try {
@@ -140,6 +158,7 @@ export async function GET(request: NextRequest) {
       .from("social_accounts")
       .upsert(
         {
+          workspace_id: workspaceId,
           user_id: user.id,
           provider: "linkedin",
           provider_account_id: profile.sub,
@@ -153,7 +172,7 @@ export async function GET(request: NextRequest) {
           last_refreshed_at: new Date().toISOString(),
           last_error: null,
         },
-        { onConflict: "user_id,provider,provider_account_id" },
+        { onConflict: "workspace_id,provider,provider_account_id" },
       )
       .select("id")
       .single();
@@ -191,8 +210,10 @@ export async function GET(request: NextRequest) {
     if (organizations.length > 0) {
       const { error: pageError } = await admin.from("social_pages").upsert(
         organizations.map((organization) => ({
+          workspace_id: workspaceId,
           user_id: user.id,
           social_account_id: account.id,
+          provider: "linkedin",
           provider_page_id: organization.id,
           name: organization.name,
           vanity_name: organization.vanityName,
@@ -201,7 +222,7 @@ export async function GET(request: NextRequest) {
           can_publish: organization.canPublish,
           status: organization.state,
         })),
-        { onConflict: "user_id,provider_page_id" },
+        { onConflict: "workspace_id,provider,provider_page_id" },
       );
       if (pageError) pageSyncError = pageError.message;
     }
@@ -214,8 +235,9 @@ export async function GET(request: NextRequest) {
       let prune = admin
         .from("social_pages")
         .delete()
-        .eq("user_id", user.id)
-        .eq("social_account_id", account.id);
+        .eq("workspace_id", workspaceId)
+        .eq("social_account_id", account.id)
+        .eq("provider", "linkedin");
       if (currentIds.length > 0) {
         prune = prune.not(
           "provider_page_id",

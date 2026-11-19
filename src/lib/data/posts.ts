@@ -21,15 +21,15 @@ export type ListPostsOptions = {
   limit?: number;
 };
 
-export async function getPostCounts(userId: string): Promise<PostCounts> {
+export async function getPostCounts(workspaceId: string): Promise<PostCounts> {
   const supabase = await createClient();
   const results = await Promise.all([
-    supabase.from("posts").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    supabase.from("posts").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId),
     ...POST_STATUSES.map((status) =>
       supabase
         .from("posts")
         .select("id", { count: "exact", head: true })
-        .eq("user_id", userId)
+        .eq("workspace_id", workspaceId)
         .eq("status", status),
     ),
   ]);
@@ -68,12 +68,12 @@ export async function listPosts(options: ListPostsOptions = {}) {
 
   const supabase = await createClient();
   const [counts, queryResult] = await Promise.all([
-    getPostCounts(session.user.id),
+    getPostCounts(session.workspace.id),
     (() => {
       let query = supabase
         .from("posts")
         .select("*")
-        .eq("user_id", session.user.id)
+        .eq("workspace_id", session.workspace.id)
         .order("scheduled_for", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
         .limit(options.limit ?? 100);
@@ -114,7 +114,7 @@ export async function getPostById(postId: string): Promise<PostWithRelations | n
     .from("posts")
     .select("*")
     .eq("id", postId)
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", session.workspace.id)
     .maybeSingle();
   if (!data) return null;
   const [post] = await hydratePosts(supabase, [data as Post]);
@@ -134,7 +134,7 @@ export async function getCalendarPosts(startIso: string, endIso: string) {
   const { data, error } = await supabase
     .from("posts")
     .select("*")
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", session.workspace.id)
     .not("scheduled_for", "is", null)
     .gte("scheduled_for", startIso)
     .lt("scheduled_for", endIso)
@@ -156,7 +156,7 @@ export async function getPublishingLogs(limit = 20): Promise<PublishingLog[]> {
   const { data } = await supabase
     .from("publishing_logs")
     .select("*")
-    .eq("user_id", session.user.id)
+    .eq("workspace_id", session.workspace.id)
     .order("created_at", { ascending: false })
     .limit(limit);
   return (data ?? []) as PublishingLog[];

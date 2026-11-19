@@ -6,20 +6,40 @@
 //   * Uses the service role only inside this function; tokens stay server-side.
 //   * Mock mode is opt-in and explicitly recorded as is_mock = true.
 //
+// Supported providers:
+//   * linkedin — personal member or company page (Posts API)
+//   * facebook — Facebook Page only (Graph API)
+//
 // Deploy: supabase functions deploy publish-scheduled-posts --no-verify-jwt
 
 import { createClient } from "npm:@supabase/supabase-js@2.119.0";
 import {
   LinkedInPublishError,
+  extractDuplicateUrn,
   isRetryableError,
   publishToLinkedIn,
   refreshLinkedInToken,
   tokenNeedsRefresh,
   type PublishResult,
 } from "../_shared/linkedin.ts";
+import {
+  FacebookPublishError,
+  isRetryableFacebookError,
+  publishToFacebookPage,
+  refreshFacebookToken,
+} from "../_shared/facebook.ts";
+import {
+  EngagementUnavailableError,
+  fetchFacebookEngagement,
+  fetchLinkedInEngagement,
+} from "../_shared/engagement.ts";
+import { isMockProviderAccountId } from "../_shared/mock.ts";
+
+type Provider = "linkedin" | "facebook";
 
 type PostRow = {
   id: string;
+  workspace_id: string;
   user_id: string;
   social_account_id: string | null;
   social_page_id: string | null;
@@ -29,8 +49,16 @@ type PostRow = {
   idempotency_key: string;
 };
 
+type AccountRow = {
+  provider: Provider;
+  provider_account_id: string | null;
+  user_id: string;
+  workspace_id: string;
+};
+
 type TokenRow = {
   user_id: string;
+  provider: Provider;
   provider_account_id: string;
   access_token: string | null;
   refresh_token: string | null;
@@ -48,8 +76,17 @@ type PageRow = {
   role: string | null;
 };
 
+type PublishFailure = {
+  code: string;
+  message: string;
+  httpStatus: number | null;
+  retryable: boolean;
+  details: string | null;
+};
+
 const workerId = `edge-${crypto.randomUUID()}`;
 const JSON_HEADERS = { "Content-Type": "application/json" };
+const FACEBOOK_REFRESH_WINDOW_SECONDS = 3 * 24 * 60 * 60;
 
 function env(name: string): string {
   return (Deno.env.get(name) ?? "").trim();
@@ -68,12 +105,27 @@ function timingSafeEqual(a: string, b: string) {
   return diff === 0;
 }
 
+function platformName(provider: Provider) {
+  return provider === "facebook" ? "Facebook" : "LinkedIn";
+}
+
+function buildMockResult(post: PostRow, provider: Provider): PublishResult {
+  return {
+    providerPostId: `urn:${provider}:mock_${post.id.replace(/-/g, "").slice(0, 20)}_${Date.now()}`,
+    providerPostUrl: null,
+    httpStatus: null,
+    isMock: true,
+    imageUrn: null,
+  };
+}
+
 async function logAttempt(
   supabase: ReturnType<typeof createClient>,
   entry: {
     post: PostRow;
     status: "started" | "success" | "failure" | "retry_scheduled" | "skipped";
     message: string;
+    provider?: Provider;
     httpStatus?: number | null;
     providerPostId?: string | null;
     errorCode?: string | null;
@@ -82,11 +134,12 @@ async function logAttempt(
   },
 ) {
   const { error } = await supabase.from("publishing_logs").insert({
+    workspace_id: entry.post.workspace_id,
     post_id: entry.post.id,
     user_id: entry.post.user_id,
     attempt: entry.post.attempt_count,
     status: entry.status,
-    provider: entry.isMock ? "mock" : "linkedin",
+    provider: entry.isMock ? "mock" : entry.provider ?? "linkedin",
     http_status: entry.httpStatus ?? null,
     provider_post_id: entry.providerPostId ?? null,
     error_code: entry.errorCode ?? null,
@@ -131,25 +184,40 @@ async function loadImage(
 async function publishOne(
   supabase: ReturnType<typeof createClient>,
   post: PostRow,
-  mock: boolean,
+  mockModes: { linkedin: boolean; facebook: boolean },
 ): Promise<{ outcome: "published" | "retry" | "failed" | "skipped"; message: string }> {
   if (!post.social_account_id) {
+    const message = "No social account is connected to this post.";
     await logAttempt(supabase, {
       post,
       status: "failure",
-      message: "No LinkedIn account is connected to this post.",
+      message,
       errorCode: "account_missing",
       isMock: false,
     });
     await supabase.rpc("mark_post_failed", {
       p_post_id: post.id,
       p_error_code: "account_missing",
-      p_error_message: "No LinkedIn account is connected to this post. Reconnect LinkedIn and reschedule it.",
+      p_error_message: `${message} Reconnect the account and reschedule it.`,
       p_http_status: null,
       p_retryable: false,
     });
     return { outcome: "failed", message: "account_missing" };
   }
+
+  const { data: accountRow } = await supabase
+    .from("social_accounts")
+    .select("provider, provider_account_id, user_id, workspace_id")
+    .eq("id", post.social_account_id)
+    .maybeSingle<AccountRow>();
+  const provider: Provider = accountRow?.provider === "facebook" ? "facebook" : "linkedin";
+  const platform = platformName(provider);
+  // Mock mode is per provider: a workspace can simulate Facebook while
+  // LinkedIn publishing is live (or the other way round). Accounts created by
+  // a mock connect route are always simulated, whatever this worker's env says:
+  // their token can never resolve against the real API, and a real failure
+  // would only hide the fact that nothing was ever connected.
+  const mock = mockModes[provider] || isMockProviderAccountId(accountRow?.provider_account_id);
 
   const { data: tokenRows, error: tokenError } = await supabase.rpc("get_social_tokens", {
     p_account_id: post.social_account_id,
@@ -157,13 +225,20 @@ async function publishOne(
   const tokens = (tokenRows?.[0] ?? null) as TokenRow | null;
 
   // Belt-and-braces ownership check: the worker uses the service role, so it
-  // must never spend one tenant's token on another tenant's post.
-  if (tokens && tokens.user_id !== post.user_id) {
-    const message = "This post's target does not belong to its owner.";
+  // must never spend one workspace's token on another workspace's post. A
+  // collaborator can publish through an account the workspace owner connected,
+  // so compare against the account's owner and workspace, not the post author.
+  if (
+    !accountRow ||
+    accountRow.workspace_id !== post.workspace_id ||
+    (tokens && tokens.user_id !== accountRow.user_id)
+  ) {
+    const message = "This post's target does not belong to its workspace.";
     await logAttempt(supabase, {
       post,
       status: "failure",
       message,
+      provider,
       errorCode: "target_mismatch",
       isMock: false,
     });
@@ -179,8 +254,8 @@ async function publishOne(
 
   if (tokenError || !tokens || !tokens.access_token) {
     const message = tokenError
-      ? `Could not read stored LinkedIn credentials: ${tokenError.message}`
-      : "LinkedIn credentials are missing. Reconnect the account.";
+      ? `Could not read stored ${platform} credentials: ${tokenError.message}`
+      : `${platform} credentials are missing. Reconnect the account.`;
     await supabase
       .from("social_accounts")
       .update({ status: "needs_reconnect", last_error: message })
@@ -189,6 +264,7 @@ async function publishOne(
       post,
       status: "failure",
       message,
+      provider,
       errorCode: "account_disconnected",
       isMock: false,
     });
@@ -203,11 +279,12 @@ async function publishOne(
   }
 
   if (tokens.status !== "connected") {
-    const message = "The LinkedIn account needs to be reconnected before publishing.";
+    const message = `The ${platform} account needs to be reconnected before publishing.`;
     await logAttempt(supabase, {
       post,
       status: "failure",
       message,
+      provider,
       errorCode: "account_reconnect_required",
       isMock: false,
     });
@@ -221,12 +298,23 @@ async function publishOne(
     return { outcome: "failed", message: "account_reconnect_required" };
   }
 
-  // Verify organization publishing rights against the stored LinkedIn state.
+  // -------------------------------------------------------------------------
+  // Provider-specific target verification
+  // -------------------------------------------------------------------------
   let organizationId: string | null = null;
-  if (post.target_type === "organization") {
+  let facebookPageId: string | null = null;
+
+  if (provider === "facebook") {
     if (!post.social_page_id) {
-      const message = "This post targets a company page but no page is attached.";
-      await logAttempt(supabase, { post, status: "failure", message, errorCode: "page_missing", isMock: false });
+      const message = "This post targets a Facebook Page but no Page is attached.";
+      await logAttempt(supabase, {
+        post,
+        status: "failure",
+        message,
+        provider,
+        errorCode: "page_missing",
+        isMock: false,
+      });
       await supabase.rpc("mark_post_failed", {
         p_post_id: post.id,
         p_error_code: "page_missing",
@@ -241,7 +329,55 @@ async function publishOne(
       .from("social_pages")
       .select("id, provider_page_id, name, can_publish, role")
       .eq("id", post.social_page_id)
-      .eq("user_id", post.user_id)
+      .eq("workspace_id", post.workspace_id)
+      .eq("social_account_id", post.social_account_id)
+      .eq("provider", "facebook")
+      .maybeSingle<PageRow>();
+
+    if (!page || !page.can_publish) {
+      const message = !page
+        ? "The selected Facebook Page is no longer available."
+        : "Your Facebook user no longer has a Page role that can create content. Ask a Page admin for an Editor or Admin role, then reconnect.";
+      await logAttempt(supabase, {
+        post,
+        status: "failure",
+        message,
+        provider,
+        errorCode: "missing_permissions",
+        isMock: false,
+      });
+      await supabase.rpc("mark_post_failed", {
+        p_post_id: post.id,
+        p_error_code: "missing_permissions",
+        p_error_message: message,
+        p_http_status: 403,
+        p_retryable: false,
+      });
+      return { outcome: "failed", message: "missing_permissions" };
+    }
+    facebookPageId = page.provider_page_id;
+  } else if (post.target_type === "organization") {
+    // Verify organization publishing rights against the stored LinkedIn state.
+    if (!post.social_page_id) {
+      const message = "This post targets a company page but no page is attached.";
+      await logAttempt(supabase, { post, status: "failure", message, provider, errorCode: "page_missing", isMock: false });
+      await supabase.rpc("mark_post_failed", {
+        p_post_id: post.id,
+        p_error_code: "page_missing",
+        p_error_message: message,
+        p_http_status: null,
+        p_retryable: false,
+      });
+      return { outcome: "failed", message: "page_missing" };
+    }
+
+    const { data: page } = await supabase
+      .from("social_pages")
+      .select("id, provider_page_id, name, can_publish, role")
+      .eq("id", post.social_page_id)
+      .eq("workspace_id", post.workspace_id)
+      .eq("social_account_id", post.social_account_id)
+      .eq("provider", "linkedin")
       .maybeSingle<PageRow>();
 
     const hasOrgScope = (tokens.scopes ?? []).includes("w_organization_social");
@@ -255,6 +391,7 @@ async function publishOne(
         post,
         status: "failure",
         message,
+        provider,
         errorCode: "missing_permissions",
         isMock: false,
       });
@@ -275,6 +412,7 @@ async function publishOne(
       post,
       status: "failure",
       message,
+      provider,
       errorCode: "missing_permissions",
       isMock: false,
     });
@@ -292,8 +430,9 @@ async function publishOne(
     post,
     status: "started",
     message: mock
-      ? "Mock publishing started (simulated — nothing is sent to LinkedIn)."
-      : "Publishing to LinkedIn.",
+      ? `Mock publishing started (simulated — nothing is sent to ${platform}).`
+      : `Publishing to ${platform}.`,
+    provider,
     isMock: mock,
   });
 
@@ -302,55 +441,76 @@ async function publishOne(
   let accessExpiresAt = tokens.access_token_expires_at;
   let refreshExpiresAt = tokens.refresh_token_expires_at;
 
-  if (!mock && tokenNeedsRefresh(accessExpiresAt)) {
-    const clientId = env("LINKEDIN_CLIENT_ID");
-    const clientSecret = env("LINKEDIN_CLIENT_SECRET");
-    if (!refreshToken || !clientId || !clientSecret) {
-      const message =
-        "The LinkedIn access token expired and cannot be refreshed. Reconnect your LinkedIn account.";
-      await supabase
-        .from("social_accounts")
-        .update({ status: "needs_reconnect", last_error: message })
-        .eq("id", post.social_account_id);
-      await logAttempt(supabase, {
-        post,
-        status: "failure",
-        message,
-        errorCode: "token_expired",
-        isMock: false,
-      });
-      await supabase.rpc("mark_post_failed", {
-        p_post_id: post.id,
-        p_error_code: "token_expired",
-        p_error_message: message,
-        p_http_status: 401,
-        p_retryable: false,
-      });
-      return { outcome: "failed", message: "token_expired" };
-    }
+  // -------------------------------------------------------------------------
+  // Token refresh (provider-specific)
+  // -------------------------------------------------------------------------
+  const needsRefresh =
+    provider === "facebook"
+      ? tokenNeedsRefresh(accessExpiresAt, FACEBOOK_REFRESH_WINDOW_SECONDS)
+      : tokenNeedsRefresh(accessExpiresAt);
 
+  if (!mock && needsRefresh) {
     try {
-      const refreshed = await refreshLinkedInToken({
-        refreshToken,
-        clientId,
-        clientSecret,
-      });
-      accessToken = refreshed.accessToken;
-      refreshToken = refreshed.refreshToken ?? refreshToken;
-      accessExpiresAt = refreshed.accessExpiresAt;
-      refreshExpiresAt = refreshed.refreshExpiresAt ?? refreshExpiresAt;
+      if (provider === "facebook") {
+        const appId = env("FACEBOOK_APP_ID");
+        const appSecret = env("FACEBOOK_APP_SECRET");
+        const graphVersion = env("FACEBOOK_GRAPH_VERSION") || "v23.0";
+        if (!appId || !appSecret) {
+          throw new Error(
+            "The Facebook access token is expiring and FACEBOOK_APP_ID / FACEBOOK_APP_SECRET are not configured on the worker. Reconnect the account.",
+          );
+        }
 
-      await supabase.rpc("store_social_tokens", {
-        p_account_id: post.social_account_id,
-        p_access_token: accessToken,
-        p_refresh_token: refreshToken,
-        p_access_expires_at: accessExpiresAt,
-        p_refresh_expires_at: refreshExpiresAt,
-        p_scopes: tokens.scopes,
-      });
+        const refreshed = await refreshFacebookToken({
+          accessToken,
+          appId,
+          appSecret,
+          graphVersion,
+        });
+        accessToken = refreshed.accessToken;
+        accessExpiresAt = refreshed.expiresIn
+          ? new Date(Date.now() + refreshed.expiresIn * 1000).toISOString()
+          : null;
+
+        await supabase.rpc("store_social_tokens", {
+          p_account_id: post.social_account_id,
+          p_access_token: accessToken,
+          p_refresh_token: null,
+          p_access_expires_at: accessExpiresAt,
+          p_refresh_expires_at: null,
+          p_scopes: tokens.scopes,
+        });
+      } else {
+        const clientId = env("LINKEDIN_CLIENT_ID");
+        const clientSecret = env("LINKEDIN_CLIENT_SECRET");
+        if (!refreshToken || !clientId || !clientSecret) {
+          throw new Error(
+            "The LinkedIn access token expired and cannot be refreshed. Reconnect your LinkedIn account.",
+          );
+        }
+
+        const refreshed = await refreshLinkedInToken({
+          refreshToken,
+          clientId,
+          clientSecret,
+        });
+        accessToken = refreshed.accessToken;
+        refreshToken = refreshed.refreshToken ?? refreshToken;
+        accessExpiresAt = refreshed.accessExpiresAt;
+        refreshExpiresAt = refreshed.refreshExpiresAt ?? refreshExpiresAt;
+
+        await supabase.rpc("store_social_tokens", {
+          p_account_id: post.social_account_id,
+          p_access_token: accessToken,
+          p_refresh_token: refreshToken,
+          p_access_expires_at: accessExpiresAt,
+          p_refresh_expires_at: refreshExpiresAt,
+          p_scopes: tokens.scopes,
+        });
+      }
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "LinkedIn token refresh failed.";
+        error instanceof Error ? error.message : `${platform} token refresh failed.`;
       await supabase
         .from("social_accounts")
         .update({ status: "needs_reconnect", last_error: message })
@@ -359,6 +519,7 @@ async function publishOne(
         post,
         status: "failure",
         message,
+        provider,
         errorCode: "token_refresh_failed",
         isMock: false,
       });
@@ -373,11 +534,26 @@ async function publishOne(
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Publish
+  // -------------------------------------------------------------------------
   let result: PublishResult;
   try {
-    const image = await loadImage(supabase, post.id);
-    result = await publishToLinkedIn(
-      {
+    if (mock) {
+      result = buildMockResult(post, provider);
+    } else if (provider === "facebook") {
+      const image = await loadImage(supabase, post.id);
+      result = await publishToFacebookPage({
+        postId: post.id,
+        pageId: facebookPageId!,
+        message: post.content,
+        accessToken,
+        graphVersion: env("FACEBOOK_GRAPH_VERSION") || "v23.0",
+        image,
+      });
+    } else {
+      const image = await loadImage(supabase, post.id);
+      result = await publishToLinkedIn({
         postId: post.id,
         memberId: tokens.provider_account_id,
         organizationId,
@@ -386,24 +562,66 @@ async function publishOne(
         accessToken,
         apiVersion: env("LINKEDIN_API_VERSION") || "202610",
         image,
-      },
-      { mock },
-    );
+      });
+    }
   } catch (error) {
-    const publishError =
-      error instanceof LinkedInPublishError
-        ? error
-        : new LinkedInPublishError(
-            "unknown_error",
-            error instanceof Error ? error.message : "Publishing failed.",
-            { retryable: isRetryableError(error) },
-          );
+    const publishError: PublishFailure =
+      error instanceof LinkedInPublishError || error instanceof FacebookPublishError
+        ? {
+            code: error.code,
+            message: error.message,
+            httpStatus: error.httpStatus,
+            retryable: error.retryable,
+            details: error.details,
+          }
+        : {
+            code: "unknown_error",
+            message: error instanceof Error ? error.message : "Publishing failed.",
+            httpStatus: null,
+            retryable: isRetryableError(error) || isRetryableFacebookError(error),
+            details: null,
+          };
 
     if (publishError.code === "invalid_token" || publishError.code === "expired_token") {
       await supabase
         .from("social_accounts")
         .update({ status: "needs_reconnect", last_error: publishError.message })
         .eq("id", post.social_account_id);
+    }
+
+    // LinkedIn rejects identical commentary with 400/409 and tells us which
+    // share already exists. That share is live, so link it instead of leaving
+    // the post failed forever (and never retry a guaranteed duplicate).
+    const duplicateUrn =
+      provider === "linkedin" && /duplicate/i.test(publishError.message)
+        ? extractDuplicateUrn(publishError.message)
+        : null;
+    if (duplicateUrn) {
+      const providerPostUrl = `https://www.linkedin.com/feed/update/${encodeURIComponent(duplicateUrn)}`;
+      const { data: linked, error: linkError } = await supabase.rpc("mark_post_published", {
+        p_post_id: post.id,
+        p_provider_post_id: duplicateUrn,
+        p_provider_post_url: providerPostUrl,
+        p_is_mock: false,
+        p_http_status: publishError.httpStatus,
+      });
+      if (!linkError && linked === true) {
+        await logAttempt(supabase, {
+          post,
+          status: "success",
+          message:
+            "LinkedIn already had this exact post. LINKFLOW linked the existing share instead of publishing a duplicate.",
+          provider,
+          providerPostId: duplicateUrn,
+          httpStatus: publishError.httpStatus,
+          isMock: false,
+          metadata: { duplicate: true, existingUrn: duplicateUrn },
+        });
+        return { outcome: "published", message: duplicateUrn };
+      }
+      if (linkError) {
+        console.error("Could not link duplicate LinkedIn post", linkError.message);
+      }
     }
 
     const { data: nextStatus, error: failError } = await supabase.rpc("mark_post_failed", {
@@ -420,6 +638,7 @@ async function publishOne(
       post,
       status: willRetry ? "retry_scheduled" : "failure",
       message: publishError.message,
+      provider,
       errorCode: publishError.code,
       httpStatus: publishError.httpStatus,
       isMock: mock,
@@ -441,13 +660,13 @@ async function publishOne(
   });
 
   if (markError || marked !== true) {
-    // LinkedIn accepted the post but the local state was already changed.
+    // The provider accepted the post but the local state was already changed.
     // This is the rare "at-least-once" window documented in the README.
     await logAttempt(supabase, {
       post,
       status: "skipped",
-      message:
-        "LinkedIn accepted the post but LINKFLOW could not transition it (it may already be published). Manual review required.",
+      message: `${platform} accepted the post but LINKFLOW could not transition it (it may already be published). Manual review required.`,
+      provider,
       errorCode: "state_transition_conflict",
       providerPostId: result.providerPostId,
       isMock: result.isMock,
@@ -460,8 +679,9 @@ async function publishOne(
     post,
     status: "success",
     message: result.isMock
-      ? "Mock publish completed. No content was sent to LinkedIn."
-      : "Published to LinkedIn.",
+      ? `Mock publish completed. No content was sent to ${platform}.`
+      : `Published to ${platform}.`,
+    provider,
     providerPostId: result.providerPostId,
     httpStatus: result.httpStatus,
     isMock: result.isMock,
@@ -469,6 +689,121 @@ async function publishOne(
   });
 
   return { outcome: "published", message: result.providerPostId };
+}
+
+type EngagementSummary = {
+  engagementSynced: number;
+  engagementFailed: number;
+  errors: string[];
+};
+
+type EngagementRow = {
+  id: string;
+  user_id: string;
+  social_account_id: string | null;
+  social_page_id: string | null;
+  provider_post_id: string | null;
+};
+
+/**
+ * Refresh like/comment counts for recently published posts. Runs at the end of
+ * every worker tick; each post is refreshed about once every 15 minutes so the
+ * provider APIs are never hammered. Failures are recorded on the post and never
+ * block publishing.
+ */
+async function syncEngagement(
+  supabase: ReturnType<typeof createClient>,
+  summary: EngagementSummary,
+) {
+  const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("posts")
+    .select("id, user_id, social_account_id, social_page_id, provider_post_id")
+    .eq("status", "published")
+    .eq("is_mock", false)
+    .not("provider_post_id", "is", null)
+    .or(`engagement_synced_at.is.null,engagement_synced_at.lt.${cutoff}`)
+    .order("engagement_synced_at", { ascending: true, nullsFirst: true })
+    .limit(10);
+
+  if (error) {
+    console.error("Engagement query failed", error.message);
+    summary.errors.push(`engagement query: ${error.message}`);
+    return;
+  }
+
+  for (const row of (data ?? []) as EngagementRow[]) {
+    try {
+      if (!row.social_account_id) continue;
+
+      const { data: tokenRows } = await supabase.rpc("get_social_tokens", {
+        p_account_id: row.social_account_id,
+      });
+      const tokens = (tokenRows?.[0] ?? null) as TokenRow | null;
+      if (!tokens?.access_token) continue;
+
+      const { data: account } = await supabase
+        .from("social_accounts")
+        .select("provider")
+        .eq("id", row.social_account_id)
+        .maybeSingle<{ provider: Provider }>();
+      const provider: Provider = account?.provider === "facebook" ? "facebook" : "linkedin";
+
+      let counts;
+      if (provider === "facebook") {
+        if (!row.social_page_id) continue;
+        const { data: page } = await supabase
+          .from("social_pages")
+          .select("provider_page_id")
+          .eq("id", row.social_page_id)
+          .maybeSingle<{ provider_page_id: string }>();
+        if (!page?.provider_page_id) continue;
+
+        counts = await fetchFacebookEngagement({
+          accessToken: tokens.access_token,
+          pageId: page.provider_page_id,
+          graphVersion: env("FACEBOOK_GRAPH_VERSION") || "v23.0",
+          providerPostId: row.provider_post_id,
+        });
+      } else {
+        counts = await fetchLinkedInEngagement({
+          accessToken: tokens.access_token,
+          apiVersion: env("LINKEDIN_API_VERSION") || "202610",
+          providerPostId: row.provider_post_id,
+        });
+      }
+
+      await supabase
+        .from("posts")
+        .update({
+          like_count: counts.likes,
+          comment_count: counts.comments,
+          share_count: counts.shares,
+          engagement_synced_at: new Date().toISOString(),
+          engagement_error: null,
+        })
+        .eq("id", row.id);
+
+      summary.engagementSynced += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Engagement sync failed.";
+      const unavailable = error instanceof EngagementUnavailableError;
+
+      // "Unavailable" means the provider has no stats for this post type. Move
+      // the timestamp forward so we do not ask again every minute, but keep the
+      // UI clean instead of showing a permanent error.
+      await supabase
+        .from("posts")
+        .update({
+          engagement_synced_at: new Date().toISOString(),
+          engagement_error: unavailable ? null : message.slice(0, 300),
+        })
+        .eq("id", row.id);
+
+      summary.engagementFailed += 1;
+      if (!unavailable) summary.errors.push(`engagement ${row.id}: ${message}`);
+    }
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -500,12 +835,15 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const mock = env("LINKEDIN_MOCK_MODE") === "true";
-  if (mock && env("LINKFLOW_ENV") === "production") {
+  const mockModes = {
+    linkedin: env("LINKEDIN_MOCK_MODE") === "true",
+    facebook: env("FACEBOOK_MOCK_MODE") === "true",
+  };
+  if ((mockModes.linkedin || mockModes.facebook) && env("LINKFLOW_ENV") === "production") {
     return json(
       {
         error:
-          "LINKEDIN_MOCK_MODE is enabled in a production environment. Refusing to run so mock results are never mistaken for real publishing.",
+          "Mock publishing is enabled in a production environment. Set LINKEDIN_MOCK_MODE=false and FACEBOOK_MOCK_MODE=false. Refusing to run so mock results are never mistaken for real publishing.",
       },
       500,
     );
@@ -522,12 +860,14 @@ Deno.serve(async (req: Request) => {
   const startedAt = Date.now();
   const summary = {
     worker: workerId,
-    mock,
+    mock: mockModes,
     claimed: 0,
     published: 0,
     retry: 0,
     failed: 0,
     skipped: 0,
+    engagementSynced: 0,
+    engagementFailed: 0,
     errors: [] as string[],
   };
 
@@ -546,7 +886,7 @@ Deno.serve(async (req: Request) => {
 
   for (const post of posts) {
     try {
-      const result = await publishOne(supabase, post, mock);
+      const result = await publishOne(supabase, post, mockModes);
       if (result.outcome === "published") summary.published++;
       else if (result.outcome === "retry") summary.retry++;
       else if (result.outcome === "skipped") summary.skipped++;
@@ -568,6 +908,8 @@ Deno.serve(async (req: Request) => {
       });
     }
   }
+
+  await syncEngagement(supabase, summary);
 
   return json({ ...summary, durationMs: Date.now() - startedAt });
 });

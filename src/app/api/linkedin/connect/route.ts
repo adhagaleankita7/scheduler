@@ -23,6 +23,7 @@ import {
   mockDisplayName,
 } from "@/lib/linkedin/mock-account";
 import { resolveRequestOrigin } from "@/lib/http/origin";
+import { getSessionContext } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,14 @@ export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.redirect(new URL("/login?next=/accounts", origin));
+  }
+
+  const session = await getSessionContext();
+  const workspaceId = session?.workspace.id;
+  if (!workspaceId) {
+    return NextResponse.redirect(
+      new URL("/accounts?error=No%20active%20workspace%20was%20found.", origin),
+    );
   }
 
   if (!isServiceRoleConfigured()) {
@@ -67,9 +76,10 @@ export async function GET(request: NextRequest) {
 
       const { data: account, error: accountError } = await admin
         .from("social_accounts")
-        .upsert(accountPayload, {
-          onConflict: "user_id,provider,provider_account_id",
-        })
+        .upsert(
+          { ...accountPayload, workspace_id: workspaceId },
+          { onConflict: "workspace_id,provider,provider_account_id" },
+        )
         .select("id")
         .single();
       if (accountError || !account) {
@@ -182,9 +192,11 @@ export async function GET(request: NextRequest) {
     // resolves granted scopes against the right list after a fallback retry.
     const { error } = await admin.from("oauth_states").insert({
       user_id: user.id,
+      workspace_id: workspaceId,
       state,
       code_verifier: null,
       scopes: requestedScopeString,
+      provider: "linkedin",
       return_to: "/accounts",
     });
     if (error) throw new Error(error.message);

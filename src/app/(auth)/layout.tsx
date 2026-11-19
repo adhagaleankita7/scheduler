@@ -37,7 +37,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             <span className="text-white/70">Even on the days you don&apos;t feel like it.</span>
           </h1>
           <p className="mt-5 max-w-sm text-[13px] leading-relaxed text-white/75">
-            Plan a full week in one session. LINKFLOW publishes one post every day at your chosen
+            Plan a full month in one session. LINKFLOW publishes one post every day at your chosen
             time — securely, through the official LinkedIn API.
           </p>
 

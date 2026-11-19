@@ -27,24 +27,32 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { initials } from "@/lib/utils";
 import { signOutAction } from "@/lib/auth/actions";
-import type { Profile } from "@/lib/types";
+import type { Profile, Workspace } from "@/lib/types";
 
 type Props = {
   profile: Pick<Profile, "full_name" | "avatar_url" | "timezone">;
   email: string | null;
   demo: boolean;
+  workspace: Workspace;
+  workspaces: Workspace[];
 };
 
-export function Topbar({ profile, email, demo }: Props) {
+export function Topbar({ profile, email, demo, workspace, workspaces }: Props) {
   const pathname = usePathname();
   const base = `/${pathname.split("/")[1] ?? ""}`;
-  const meta = PAGE_TITLES[base] ?? { title: "LINKFLOW", subtitle: "" };
+  const meta = PAGE_TITLES[pathname] ?? PAGE_TITLES[base] ?? { title: "LINKFLOW", subtitle: "" };
   const isComposer = pathname.startsWith("/composer");
 
   return (
     <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur-xl">
       <div className="flex h-16 items-center gap-3 px-4 sm:px-6 lg:px-8">
-        <MobileSidebar profile={profile} email={email} demo={demo} />
+        <MobileSidebar
+          profile={profile}
+          email={email}
+          demo={demo}
+          workspace={workspace}
+          workspaces={workspaces}
+        />
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -120,7 +128,7 @@ export function Topbar({ profile, email, demo }: Props) {
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link href="/accounts">
-                <UserRoundCog /> LinkedIn accounts
+                <UserRoundCog /> Social accounts
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
@@ -131,6 +139,11 @@ export function Topbar({ profile, email, demo }: Props) {
             <DropdownMenuItem asChild>
               <a href="https://learn.microsoft.com/en-us/linkedin/marketing/" target="_blank" rel="noreferrer">
                 <ExternalLink /> LinkedIn API docs
+              </a>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <a href="https://developers.facebook.com/docs/pages-api/posts" target="_blank" rel="noreferrer">
+                <ExternalLink /> Facebook Pages API docs
               </a>
             </DropdownMenuItem>
             <DropdownMenuSeparator />

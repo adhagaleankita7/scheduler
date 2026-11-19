@@ -92,10 +92,16 @@ npx supabase secrets set \
   LINKEDIN_CLIENT_SECRET=<client-secret> \
   LINKEDIN_API_VERSION=202610 \
   LINKFLOW_ENV=production
+
+# Optional: Facebook Pages (required only if you connect Facebook)
+npx supabase secrets set \
+  FACEBOOK_APP_ID=<app-id> \
+  FACEBOOK_APP_SECRET=<app-secret> \
+  FACEBOOK_GRAPH_VERSION=v23.0
 ```
 
-Do **not** set `LINKEDIN_MOCK_MODE` in production. `LINKFLOW_ENV=production` makes the function refuse
-mock publishing even if the flag is present.
+Do **not** set `LINKEDIN_MOCK_MODE` or `FACEBOOK_MOCK_MODE` in production. `LINKFLOW_ENV=production`
+makes the function refuse mock publishing even if a flag is present.
 
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically by Supabase.
 
@@ -204,8 +210,14 @@ LINKEDIN_CLIENT_SECRET
 LINKEDIN_SCOPES=openid profile email w_member_social
 LINKEDIN_API_VERSION=202610
 CRON_SECRET
+# Optional — Facebook Pages:
+# FACEBOOK_APP_ID
+# FACEBOOK_APP_SECRET
+# FACEBOOK_SCOPES=public_profile pages_show_list pages_read_engagement pages_manage_posts
+# FACEBOOK_GRAPH_VERSION=v23.0
 # Optional for local OAuth over an HTTPS tunnel:
 # LINKEDIN_REDIRECT_URI=https://<tunnel-host>/api/linkedin/callback
+# FACEBOOK_REDIRECT_URI=https://<tunnel-host>/api/facebook/callback
 ```
 
 Never prefix the service-role key or LinkedIn secret with `NEXT_PUBLIC_`.

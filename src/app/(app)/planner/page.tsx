@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { CalendarRange } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
-import { WeekPlanner } from "@/components/planner/week-planner";
+import { PlanPlanner } from "@/components/planner/plan-planner";
 import { getAccountsOverview } from "@/lib/data/accounts";
 import { requireSession } from "@/lib/session";
 import { upcomingMonday } from "@/lib/scheduling/slots";
@@ -26,12 +26,14 @@ export default async function PlannerPage() {
         title="Write a week. Publish every day."
         description="Seven posts, one per day, at the time you choose. Schedule the whole week in one click — the publisher handles the rest, even while you're offline."
       />
-      <WeekPlanner
+      <PlanPlanner
+        days={7}
         targets={overview.targets}
         timezone={timezone}
         defaultTime={defaultTime}
         defaultStartDate={upcomingMonday(timezone)}
         demo={session.demo}
+        userId={session.user.id}
       />
     </div>
   );

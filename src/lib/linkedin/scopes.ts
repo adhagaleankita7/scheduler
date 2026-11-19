@@ -54,7 +54,19 @@ export function personalOnlyScopes(scopes: readonly string[]) {
 }
 
 /**
- * LinkedIn rejected the authorization with `invalid_scope` while org scopes were
+ * LinkedIn reports a scope rejection with more than one code: `invalid_scope`
+ * from the token endpoint and `unauthorized_scope_error` on the authorization
+ * endpoint (the "Bummer, something went wrong" page). Treat both as the same
+ * condition so a pending Community Management API approval always degrades to
+ * personal publishing instead of a dead end.
+ */
+export function isScopeRejection(providerError: string | null | undefined) {
+  if (!providerError) return false;
+  return /^(?:invalid|unauthorized)_scope(?:_error)?$/i.test(providerError.trim());
+}
+
+/**
+ * LinkedIn rejected the authorization with a scope error while org scopes were
  * requested. Retrying with personal scopes keeps sign-in and personal posting
  * working, and the app picks up page access automatically after approval.
  */
@@ -63,7 +75,7 @@ export function shouldRetryWithoutOrganizationScopes(
   providerError: string | null | undefined,
 ) {
   return (
-    providerError === "invalid_scope" &&
+    isScopeRejection(providerError) &&
     splitRequestedScopes(requestedScopes).organization.length > 0
   );
 }

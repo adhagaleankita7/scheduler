@@ -12,6 +12,9 @@ import type {
   SocialPage,
 } from "@/lib/types";
 
+const DEMO_USER_ID = "d0000000-0000-4000-8000-000000000001";
+const DEMO_WORKSPACE_ID = "d0000000-0000-4000-8000-000000000101";
+
 const DEMO_CONTENT = [
   "Most teams don't have a content problem — they have a consistency problem.\n\nYou don't need 30 brilliant ideas. You need 7 honest ones, published every week.\n\nHere's the system we use:\n\n1. One theme per week\n2. Seven short observations\n3. One fixed publishing time\n4. Review once, then let the queue do the work\n\nConsistency compounds. Brilliance is optional.\n\n#LinkedInGrowth #ContentStrategy",
   "The best LinkedIn post I wrote last month took 11 minutes.\n\nIt wasn't clever. It was specific.\n\nI replaced \"we help teams scale\" with \"we cut our weekly reporting from 6 hours to 25 minutes.\"\n\nSpecific beats polished. Every single time.\n\n#Copywriting #SaaS",
@@ -28,7 +31,8 @@ const DEMO_IMAGES: (PostMedia | null)[] = [null, null, null, null, null, null, n
 function demoAccount(): SocialAccount {
   return {
     id: "a0000000-0000-4000-8000-000000000001",
-    user_id: "d0000000-0000-4000-8000-000000000001",
+    workspace_id: DEMO_WORKSPACE_ID,
+    user_id: DEMO_USER_ID,
     provider: "linkedin",
     provider_account_id: "demo_member",
     display_name: "Aarav Mehta",
@@ -48,8 +52,10 @@ function demoAccount(): SocialAccount {
 
 function demoPages(accountId: string): SocialPage[] {
   const base = {
-    user_id: "d0000000-0000-4000-8000-000000000001",
+    workspace_id: DEMO_WORKSPACE_ID,
+    user_id: DEMO_USER_ID,
     social_account_id: accountId,
+    provider: "linkedin" as const,
     page_type: "organization",
     created_at: new Date(Date.now() - 26 * 86_400_000).toISOString(),
     updated_at: new Date().toISOString(),
@@ -82,7 +88,8 @@ function demoPages(accountId: string): SocialPage[] {
 
 export function demoProfile(): Profile {
   return {
-    id: "d0000000-0000-4000-8000-000000000001",
+    id: DEMO_USER_ID,
+    email: "demo@linkflow.local",
     full_name: "Aarav Mehta",
     headline: "Founder · Northstar Studio",
     avatar_url: null,
@@ -91,6 +98,7 @@ export function demoProfile(): Profile {
     default_posting_days: [1, 2, 3, 4, 5, 6, 7],
     theme: "system",
     onboarded: true,
+    active_workspace_id: DEMO_WORKSPACE_ID,
     created_at: new Date(Date.now() - 26 * 86_400_000).toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -98,7 +106,8 @@ export function demoProfile(): Profile {
 
 export function demoQueueSettings(): QueueSettings {
   return {
-    user_id: "d0000000-0000-4000-8000-000000000001",
+    workspace_id: DEMO_WORKSPACE_ID,
+    user_id: DEMO_USER_ID,
     timezone: "Asia/Kolkata",
     posting_days: [1, 2, 3, 4, 5, 6, 7],
     posting_times: ["10:00:00"],
@@ -112,7 +121,8 @@ export function demoQueueSettings(): QueueSettings {
 function basePost(overrides: Partial<Post>): Post {
   return {
     id: crypto.randomUUID(),
-    user_id: "d0000000-0000-4000-8000-000000000001",
+    workspace_id: DEMO_WORKSPACE_ID,
+    user_id: DEMO_USER_ID,
     social_account_id: "a0000000-0000-4000-8000-000000000001",
     social_page_id: null,
     schedule_id: null,
@@ -134,6 +144,11 @@ function basePost(overrides: Partial<Post>): Post {
     locked_by: null,
     queue_position: null,
     idempotency_key: crypto.randomUUID(),
+    like_count: 0,
+    comment_count: 0,
+    share_count: 0,
+    engagement_synced_at: null,
+    engagement_error: null,
     created_at: new Date(Date.now() - 5 * 86_400_000).toISOString(),
     updated_at: new Date().toISOString(),
     ...overrides,
@@ -157,6 +172,10 @@ export function demoPosts(now = new Date()): PostWithRelations[] {
       provider_post_id: "urn:li:share:7301000000000000001",
       provider_post_url: "https://www.linkedin.com/feed/update/urn:li:share:7301000000000000001",
       attempt_count: 1,
+      like_count: 124,
+      comment_count: 18,
+      share_count: 9,
+      engagement_synced_at: dayAt(-6, "12:00:00"),
     }),
     basePost({
       content: DEMO_CONTENT[1],
@@ -166,6 +185,10 @@ export function demoPosts(now = new Date()): PostWithRelations[] {
       provider_post_id: "urn:li:share:7301000000000000002",
       provider_post_url: "https://www.linkedin.com/feed/update/urn:li:share:7301000000000000002",
       attempt_count: 1,
+      like_count: 87,
+      comment_count: 11,
+      share_count: 4,
+      engagement_synced_at: dayAt(-5, "12:00:00"),
       social_page_id: pages[0].id,
       target_type: "organization",
     }),
@@ -177,6 +200,10 @@ export function demoPosts(now = new Date()): PostWithRelations[] {
       provider_post_id: "urn:li:share:7301000000000000003",
       provider_post_url: "https://www.linkedin.com/feed/update/urn:li:share:7301000000000000003",
       attempt_count: 1,
+      like_count: 63,
+      comment_count: 7,
+      share_count: 2,
+      engagement_synced_at: dayAt(-4, "12:00:00"),
     }),
     basePost({
       content: DEMO_CONTENT[3],
@@ -188,6 +215,10 @@ export function demoPosts(now = new Date()): PostWithRelations[] {
       attempt_count: 2,
       last_error: "LinkedIn was briefly unavailable. The retry succeeded.",
       last_error_code: "linkedin_server_error",
+      like_count: 210,
+      comment_count: 32,
+      share_count: 15,
+      engagement_synced_at: dayAt(-3, "12:00:00"),
     }),
     basePost({
       content: DEMO_CONTENT[4],
@@ -197,6 +228,10 @@ export function demoPosts(now = new Date()): PostWithRelations[] {
       provider_post_id: "urn:li:share:7301000000000000005",
       provider_post_url: "https://www.linkedin.com/feed/update/urn:li:share:7301000000000000005",
       attempt_count: 1,
+      like_count: 45,
+      comment_count: 6,
+      share_count: 1,
+      engagement_synced_at: dayAt(-2, "12:00:00"),
     }),
     basePost({
       content: DEMO_CONTENT[5],
@@ -206,6 +241,10 @@ export function demoPosts(now = new Date()): PostWithRelations[] {
       provider_post_id: "urn:li:share:7301000000000000006",
       provider_post_url: "https://www.linkedin.com/feed/update/urn:li:share:7301000000000000006",
       attempt_count: 1,
+      like_count: 156,
+      comment_count: 21,
+      share_count: 8,
+      engagement_synced_at: dayAt(-1, "12:00:00"),
       social_page_id: pages[0].id,
       target_type: "organization",
     }),
@@ -265,6 +304,7 @@ export function demoPosts(now = new Date()): PostWithRelations[] {
       id: account.id,
       display_name: account.display_name,
       avatar_url: account.avatar_url,
+      provider: account.provider,
       provider_account_id: account.provider_account_id,
       status: account.status,
     },
@@ -305,6 +345,7 @@ export function demoLogs(posts: PostWithRelations[]): PublishingLog[] {
     .slice(0, 10)
     .map((post, index) => ({
       id: index + 1,
+      workspace_id: post.workspace_id,
       post_id: post.id,
       user_id: post.user_id,
       attempt: post.attempt_count,

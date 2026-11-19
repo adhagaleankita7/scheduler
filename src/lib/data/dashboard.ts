@@ -12,13 +12,13 @@ import type { ActivityPoint, DashboardData, Post, PostStatus } from "@/lib/types
 
 async function countPosts(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
+  workspaceId: string,
   status?: PostStatus,
 ) {
   let query = supabase
     .from("posts")
     .select("id", { count: "exact", head: true })
-    .eq("user_id", userId);
+    .eq("workspace_id", workspaceId);
   if (status) query = query.eq("status", status);
   const { count } = await query;
   return count ?? 0;
@@ -33,7 +33,7 @@ export async function getDashboardData(): Promise<DashboardData & { demo: boolea
   }
 
   const supabase = await createClient();
-  const userId = session.user.id;
+  const workspaceId = session.workspace.id;
   const now = new Date();
   const nowIso = now.toISOString();
   const today = todayDateKey(timezone, now);
@@ -54,15 +54,15 @@ export async function getDashboardData(): Promise<DashboardData & { demo: boolea
     publishedActivityResult,
     failedActivityResult,
   ] = await Promise.all([
-    countPosts(supabase, userId),
-    countPosts(supabase, userId, "scheduled"),
-    countPosts(supabase, userId, "published"),
-    countPosts(supabase, userId, "draft"),
-    countPosts(supabase, userId, "failed"),
+    countPosts(supabase, workspaceId),
+    countPosts(supabase, workspaceId, "scheduled"),
+    countPosts(supabase, workspaceId, "published"),
+    countPosts(supabase, workspaceId, "draft"),
+    countPosts(supabase, workspaceId, "failed"),
     supabase
       .from("posts")
       .select("*")
-      .eq("user_id", userId)
+      .eq("workspace_id", workspaceId)
       .eq("status", "scheduled")
       .gte("scheduled_for", nowIso)
       .order("scheduled_for", { ascending: true })
@@ -71,7 +71,7 @@ export async function getDashboardData(): Promise<DashboardData & { demo: boolea
     supabase
       .from("posts")
       .select("*")
-      .eq("user_id", userId)
+      .eq("workspace_id", workspaceId)
       .eq("status", "scheduled")
       .gte("scheduled_for", nowIso)
       .order("scheduled_for", { ascending: true })
@@ -79,28 +79,28 @@ export async function getDashboardData(): Promise<DashboardData & { demo: boolea
     supabase
       .from("posts")
       .select("*")
-      .eq("user_id", userId)
+      .eq("workspace_id", workspaceId)
       .in("status", ["published", "failed"])
       .order("updated_at", { ascending: false })
       .limit(5),
     supabase
       .from("posts")
       .select("scheduled_for, status")
-      .eq("user_id", userId)
+      .eq("workspace_id", workspaceId)
       .not("scheduled_for", "is", null)
       .gte("scheduled_for", startIso)
       .lt("scheduled_for", endIso),
     supabase
       .from("posts")
       .select("published_at")
-      .eq("user_id", userId)
+      .eq("workspace_id", workspaceId)
       .not("published_at", "is", null)
       .gte("published_at", startIso)
       .lt("published_at", endIso),
     supabase
       .from("publishing_logs")
       .select("created_at")
-      .eq("user_id", userId)
+      .eq("workspace_id", workspaceId)
       .eq("status", "failure")
       .gte("created_at", startIso)
       .lt("created_at", endIso),
