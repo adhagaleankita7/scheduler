@@ -64,6 +64,12 @@ describe("workspace migration", () => {
     expect(migration).toContain("(storage.foldername(name))[1] = (select auth.uid())::text");
   });
 
+  it("keeps workspace tables away from signed-out visitors", () => {
+    expect(migration).toContain("revoke all on public.workspaces from anon;");
+    expect(migration).toContain("revoke all on public.workspace_members from anon;");
+    expect(migration).toContain("revoke all on public.workspace_invites from anon;");
+  });
+
   it("grants the new workspace column on the column-locked accounts table", () => {
     // social_accounts only grants column-level SELECT (tokens live in Vault),
     // so a missing column grant breaks every account query at runtime.

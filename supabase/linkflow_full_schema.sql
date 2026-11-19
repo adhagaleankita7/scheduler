@@ -2248,6 +2248,13 @@ create policy "queue_settings_delete_workspace" on public.queue_settings
 -- ---------------------------------------------------------------------------
 -- 9. Table privileges
 -- ---------------------------------------------------------------------------
+-- Service-role and authenticated only. Supabase's default privileges hand new
+-- tables to `anon` as well; a signed-out visitor has no business reading a
+-- member list even though RLS would already return nothing.
+revoke all on public.workspaces from anon;
+revoke all on public.workspace_members from anon;
+revoke all on public.workspace_invites from anon;
+
 grant select, insert, update, delete on public.workspaces to authenticated;
 grant select, insert, update, delete on public.workspace_members to authenticated;
 grant select, insert, update, delete on public.workspace_invites to authenticated;
