@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { demoPosts } from "@/lib/demo/fixtures";
 import { hydratePosts, signedMediaUrls } from "@/lib/data/hydrate";
+import { matchesTarget, parseTargetParam, type ParsedTarget } from "@/lib/targets";
 import type { Post, PostStatus, PostWithRelations, PublishingLog } from "@/lib/types";
 
 export const POST_STATUSES: PostStatus[] = [
@@ -18,20 +19,41 @@ export type PostCounts = Record<PostStatus | "all", number>;
 export type ListPostsOptions = {
   status?: PostStatus | "all";
   search?: string;
+  /** `accountId` or `accountId|pageId` from the page filter. */
+  target?: string;
   limit?: number;
 };
 
-export async function getPostCounts(workspaceId: string): Promise<PostCounts> {
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+function postCountQuery(
+  supabase: Supabase,
+  workspaceId: string,
+  target: ParsedTarget | null,
+  status?: PostStatus,
+) {
+  let query = supabase
+    .from("posts")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId);
+  if (status) query = query.eq("status", status);
+  if (target) {
+    query = query.eq("social_account_id", target.accountId);
+    query = target.pageId
+      ? query.eq("social_page_id", target.pageId)
+      : query.is("social_page_id", null);
+  }
+  return query;
+}
+
+export async function getPostCounts(
+  workspaceId: string,
+  target: ParsedTarget | null = null,
+): Promise<PostCounts> {
   const supabase = await createClient();
   const results = await Promise.all([
-    supabase.from("posts").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId),
-    ...POST_STATUSES.map((status) =>
-      supabase
-        .from("posts")
-        .select("id", { count: "exact", head: true })
-        .eq("workspace_id", workspaceId)
-        .eq("status", status),
-    ),
+    postCountQuery(supabase, workspaceId, target),
+    ...POST_STATUSES.map((status) => postCountQuery(supabase, workspaceId, target, status)),
   ]);
 
   const counts = { all: results[0].count ?? 0 } as PostCounts;
@@ -43,10 +65,12 @@ export async function getPostCounts(workspaceId: string): Promise<PostCounts> {
 
 export async function listPosts(options: ListPostsOptions = {}) {
   const session = await requireSession();
+  const target = parseTargetParam(options.target);
 
   if (session.demo) {
     const all = demoPosts();
-    let posts = all;
+    const scoped = target ? all.filter((post) => matchesTarget(post, target)) : all;
+    let posts = scoped;
     if (options.status && options.status !== "all") {
       posts = posts.filter((post) => post.status === options.status);
     }
@@ -54,9 +78,9 @@ export async function listPosts(options: ListPostsOptions = {}) {
       const needle = options.search.toLowerCase();
       posts = posts.filter((post) => post.content.toLowerCase().includes(needle));
     }
-    const counts = { all: all.length } as PostCounts;
+    const counts = { all: scoped.length } as PostCounts;
     for (const status of POST_STATUSES) {
-      counts[status] = all.filter((post) => post.status === status).length;
+      counts[status] = scoped.filter((post) => post.status === status).length;
     }
     return {
       posts: posts.slice(0, options.limit ?? 100),
@@ -68,7 +92,7 @@ export async function listPosts(options: ListPostsOptions = {}) {
 
   const supabase = await createClient();
   const [counts, queryResult] = await Promise.all([
-    getPostCounts(session.workspace.id),
+    getPostCounts(session.workspace.id, target),
     (() => {
       let query = supabase
         .from("posts")
@@ -80,6 +104,12 @@ export async function listPosts(options: ListPostsOptions = {}) {
 
       if (options.status && options.status !== "all") {
         query = query.eq("status", options.status);
+      }
+      if (target) {
+        query = query.eq("social_account_id", target.accountId);
+        query = target.pageId
+          ? query.eq("social_page_id", target.pageId)
+          : query.is("social_page_id", null);
       }
       if (options.search?.trim()) {
         const safe = options.search.trim().replace(/[%_]/g, "\\$&");

@@ -19,6 +19,7 @@ an Edge Function publishing worker, and `pg_cron` + `pg_net` scheduling.
 - [Environment variables](#environment-variables)
 - [Database migrations](#database-migrations)
 - [The 7- and 30-day workflows](#the-7--and-30-day-workflows)
+- [Pages and per-page analytics](#pages-and-per-page-analytics)
 - [Workspaces and collaborators](#workspaces-and-collaborators)
 - [Publishing engine](#publishing-engine)
 - [Security model](#security-model)
@@ -46,6 +47,9 @@ an Edge Function publishing worker, and `pg_cron` + `pg_net` scheduling.
   Facebook Graph API, depending on the target.
 - **Track everything.** Dashboard charts, status ring, upcoming queue, publishing history, and
   immutable attempt logs.
+- **See each page on its own.** The Pages view gives every Facebook Page and LinkedIn company page
+  its own dashboard — published, pending and failed counts, lifetime likes/comments/shares, and the
+  posts behind those numbers. The dashboard and All posts filter down to one page in a click.
 - **Stay in control.** Pause the queue, resume it, reorder slots, retry failures, cancel, duplicate,
   or drag posts to another day on the calendar.
 - **Work with collaborators.** Invite teammates by email from Settings. Editors see the same
@@ -331,6 +335,27 @@ Other entry points:
 
 ---
 
+## Pages and per-page analytics
+
+A workspace can connect several Facebook Pages and LinkedIn company pages. Each page gets its own
+row in `posts.social_page_id`, so the numbers never mix:
+
+- **Pages** (`/pages`) — every page with published, pending and failed counts, lifetime
+  likes/comments/shares, role and "ready to publish" state. Click through for the full view.
+- **Page dashboard** (`/pages/[pageId]`) — the page's stats, 7-day activity, engagement totals,
+  queued posts, recent publishing and the complete post history.
+- **Filters** — the main dashboard and All posts accept `?target=accountId|pageId` and remember the
+  choice in the URL. The same value is a valid `?target=` for the composer, so "New post" from a page
+  dashboard opens with that page already selected.
+
+Engagement is written only by the publishing worker through the service role: the worker refreshes
+each published post about every 15 minutes with the LinkedIn Social Actions API or the Facebook Graph
+API. The database trigger keeps `like_count`, `comment_count` and `share_count` engine-owned, so a
+browser cannot fake its own metrics. Impressions and reach are not fetched — they require Meta's
+`read_insights` permission and LinkedIn's page analytics products.
+
+---
+
 ## Workspaces and collaborators
 
 Everything in LINKFLOW belongs to a **workspace**, not to a single account:
@@ -458,7 +483,7 @@ src/
   lib/
     actions/              # Server actions (posts, queue, settings, accounts)
     auth/                 # Auth server actions
-    data/                 # Server-side read layer
+    data/                 # Server-side read layer (posts, dashboard, targets/analytics)
     demo/                 # Demo fixtures
     linkedin/             # OAuth helpers
     scheduling/           # Timezone, slots and calendar math
@@ -496,5 +521,5 @@ docs/                     # Deployment, testing, LinkedIn approval, publishing m
 - LinkedIn access tokens are long-lived (typically 60 days); refresh tokens are used when available.
   When both expire, the account must reconnect.
 - The in-app setup page and docs describe the hosted Supabase flow. Local Supabase requires Docker.
-- No analytics beyond publishing activity: LINKFLOW does not fetch LinkedIn impression or engagement
-  metrics.
+- No impression or reach analytics: LINKFLOW syncs likes, comments and shares per published post, but
+  not LinkedIn/Facebook impressions, reach or audience demographics.

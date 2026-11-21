@@ -211,6 +211,12 @@ export type ActivityPoint = {
   failed: number;
 };
 
+export type EngagementTotals = {
+  likes: number;
+  comments: number;
+  shares: number;
+};
+
 export type DashboardData = {
   counts: {
     total: number;
@@ -219,6 +225,7 @@ export type DashboardData = {
     draft: number;
     failed: number;
   };
+  engagement: EngagementTotals;
   nextPost: PostWithRelations | null;
   recent: PostWithRelations[];
   upcoming: PostWithRelations[];

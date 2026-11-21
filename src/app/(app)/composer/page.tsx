@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function ComposerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ post?: string; duplicate?: string }>;
+  searchParams: Promise<{ post?: string; duplicate?: string; target?: string }>;
 }) {
   const [session, overview, params] = await Promise.all([
     requireSession(),
@@ -24,6 +24,12 @@ export default async function ComposerPage({
 
   const sourceId = params.post ?? params.duplicate;
   const source = sourceId ? await getPostById(sourceId) : null;
+  // A page dashboard can deep-link here with ?target=accountId|pageId. Ignore
+  // values that no longer exist instead of showing an unselectable target.
+  const requestedTarget =
+    params.target && overview.targets.some((target) => target.value === params.target)
+      ? params.target
+      : "";
 
   let mediaUrl: string | null = null;
   if (source?.media && !session.demo) {
@@ -42,7 +48,7 @@ export default async function ComposerPage({
     content: source?.content ?? "",
     target: source
       ? encodeTarget(source.social_account_id ?? "", source.social_page_id)
-      : "",
+      : requestedTarget,
     scheduledFor: editing && source ? source.scheduled_for : null,
     status: editing && source ? source.status : null,
     mediaPath: source?.media?.storage_path ?? null,

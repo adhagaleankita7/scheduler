@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {
   ArrowRight,
-  CalendarPlus,
+  BarChart3,
   CalendarRange,
   Clock3,
   FileText,
@@ -13,6 +13,8 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { StatusRing } from "@/components/shared/status-ring";
+import { EngagementStats } from "@/components/shared/engagement-stats";
+import { TargetFilter } from "@/components/shared/target-filter";
 import { PublishingActivityChart } from "@/components/shared/activity-chart";
 import { PostCard } from "@/components/posts/post-card";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -21,14 +23,24 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getDashboardData } from "@/lib/data/dashboard";
+import { getTargetAnalytics } from "@/lib/data/targets";
 import { requireSession } from "@/lib/session";
 import { formatInZone } from "@/lib/scheduling/timezone";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
-  const [session, data] = await Promise.all([requireSession(), getDashboardData()]);
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ target?: string }>;
+}) {
+  const [session, params] = await Promise.all([requireSession(), searchParams]);
+  const [data, analytics] = await Promise.all([
+    getDashboardData({ target: params.target }),
+    getTargetAnalytics(),
+  ]);
   const timezone = data.timezone;
+  const activeTarget = analytics.targets.find((target) => target.value === params.target) ?? null;
   const firstName = session.profile.full_name?.split(" ")[0] ?? "there";
   const hour = Number(formatInZone(new Date(), timezone, "H"));
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -44,14 +56,21 @@ export default async function DashboardPage() {
           </>
         }
         title={`${greeting}, ${firstName}`}
-        description="Here's how your LinkedIn publishing is going. The engine runs on its own — you just keep the ideas coming."
+        description={
+          activeTarget
+            ? `Everything for ${activeTarget.label} (${activeTarget.subtitle.toLowerCase()}) — posts, schedule and engagement in one place.`
+            : "Here's how your publishing is going across every connected page. Pick a page to see its own posts and engagement."
+        }
         actions={
           <>
-            <Button asChild variant="outline">
-              <Link href="/composer">
-                <CalendarPlus className="size-4" /> New post
-              </Link>
-            </Button>
+            <TargetFilter targets={analytics.targets} />
+            {activeTarget?.pageId && (
+              <Button asChild variant="outline">
+                <Link href={`/pages/${activeTarget.pageId}`}>
+                  <BarChart3 className="size-4" /> Page view
+                </Link>
+              </Button>
+            )}
             <Button asChild variant="gradient">
               <Link href="/planner">
                 Plan my week <ArrowRight className="size-4" />
@@ -68,6 +87,7 @@ export default async function DashboardPage() {
           <div className="min-w-0">
             <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-card/70 px-2.5 py-1 text-[10.5px] font-semibold text-primary">
               <Clock3 className="size-3" /> Next scheduled post
+              {activeTarget ? ` · ${activeTarget.label}` : ""}
             </div>
             {data.nextPost ? (
               <>
@@ -135,7 +155,7 @@ export default async function DashboardPage() {
           value={data.counts.published}
           icon={Send}
           tone="emerald"
-          hint="Delivered to LinkedIn"
+          hint="Delivered"
         />
         <StatCard label="Drafts" value={data.counts.draft} icon={FileText} tone="violet" hint="Not scheduled yet" />
         <StatCard
@@ -172,9 +192,17 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-5">
             <StatusRing counts={data.counts} />
+            <div className="space-y-2 border-t border-border/60 pt-4">
+              <p className="text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Engagement · published posts
+              </p>
+              <EngagementStats engagement={data.engagement} />
+            </div>
             {data.counts.failed > 0 && (
               <Link
-                href="/posts?status=failed"
+                href={`/posts?status=failed${
+                  activeTarget ? `&target=${encodeURIComponent(activeTarget.value)}` : ""
+                }`}
                 className="flex items-center gap-2 rounded-xl border border-destructive/20 bg-destructive/[0.06] px-3 py-2.5 text-[11.5px] text-destructive transition-colors hover:bg-destructive/10"
               >
                 <XCircle className="size-3.5 shrink-0" />
@@ -237,7 +265,9 @@ export default async function DashboardPage() {
               <CardDescription>Every attempt is logged</CardDescription>
             </div>
             <Button asChild variant="ghost" size="sm">
-              <Link href="/posts">
+              <Link
+                href={`/posts${activeTarget ? `?target=${encodeURIComponent(activeTarget.value)}` : ""}`}
+              >
                 All posts <ArrowRight className="size-3.5" />
               </Link>
             </Button>

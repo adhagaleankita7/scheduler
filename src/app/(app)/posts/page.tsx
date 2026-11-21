@@ -4,9 +4,11 @@ import { FileText, Plus, Search, X } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { PostCard } from "@/components/posts/post-card";
 import { EmptyState } from "@/components/shared/empty-state";
+import { TargetFilter } from "@/components/shared/target-filter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { listPosts, POST_STATUSES, type PostCounts } from "@/lib/data/posts";
+import { getTargetAnalytics } from "@/lib/data/targets";
 import { requireSession } from "@/lib/session";
 import type { PostStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -60,10 +62,12 @@ function StatusTabs({
   status,
   counts,
   search,
+  target,
 }: {
   status: PostStatus | "all";
   counts: PostCounts;
   search?: string;
+  target?: string;
 }) {
   const items: (PostStatus | "all")[] = ["all", ...POST_STATUSES];
   return (
@@ -72,6 +76,7 @@ function StatusTabs({
         const params = new URLSearchParams();
         if (item !== "all") params.set("status", item);
         if (search) params.set("q", search);
+        if (target) params.set("target", target);
         const href = `/posts${params.toString() ? `?${params.toString()}` : ""}`;
         const active = status === item;
         return (
@@ -104,7 +109,7 @@ function StatusTabs({
 export default async function PostsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; target?: string }>;
 }) {
   const [session, params] = await Promise.all([requireSession(), searchParams]);
   const status: PostStatus | "all" =
@@ -112,9 +117,17 @@ export default async function PostsPage({
       ? (params.status as PostStatus)
       : "all";
   const search = params.q?.trim() || undefined;
-  const data = await listPosts({ status, search, limit: 200 });
+  const [data, analytics] = await Promise.all([
+    listPosts({ status, search, target: params.target, limit: 200 }),
+    getTargetAnalytics(),
+  ]);
+  const activeTarget = analytics.targets.find((target) => target.value === params.target) ?? null;
   const timezone = session.profile.timezone || "Asia/Kolkata";
   const copy = EMPTY_COPY[status];
+  const clearParams = new URLSearchParams();
+  if (status !== "all") clearParams.set("status", status);
+  if (activeTarget) clearParams.set("target", activeTarget.value);
+  const clearHref = `/posts${clearParams.toString() ? `?${clearParams.toString()}` : ""}`;
 
   return (
     <div>
@@ -126,21 +139,34 @@ export default async function PostsPage({
           </>
         }
         title="Every post, one place"
-        description="Drafts, scheduled posts and full publishing history. Filter by status, search the text, and act on anything that needs attention."
+        description={
+          activeTarget
+            ? `Showing only posts for ${activeTarget.label} (${activeTarget.subtitle.toLowerCase()}).`
+            : "Drafts, scheduled posts and full publishing history. Filter by page and status, search the text, and act on anything that needs attention."
+        }
         actions={
-          <Button asChild variant="gradient">
-            <Link href="/composer">
-              <Plus className="size-4" /> New post
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <TargetFilter targets={analytics.targets} ariaLabel="Filter posts by page" />
+            <Button asChild variant="gradient">
+              <Link href="/composer">
+                <Plus className="size-4" /> New post
+              </Link>
+            </Button>
+          </div>
         }
       />
 
       <div className="mb-4 space-y-3">
-        <StatusTabs status={status} counts={data.counts} search={search} />
+        <StatusTabs
+          status={status}
+          counts={data.counts}
+          search={search}
+          target={activeTarget?.value}
+        />
 
         <form action="/posts" method="get" className="flex flex-wrap items-center gap-2">
           {status !== "all" && <input type="hidden" name="status" value={status} />}
+          {activeTarget && <input type="hidden" name="target" value={activeTarget.value} />}
           <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -157,7 +183,7 @@ export default async function PostsPage({
           </Button>
           {search && (
             <Button asChild variant="ghost" size="sm">
-              <Link href={status === "all" ? "/posts" : `/posts?status=${status}`}>
+              <Link href={clearHref}>
                 <X className="size-3.5" /> Clear
               </Link>
             </Button>

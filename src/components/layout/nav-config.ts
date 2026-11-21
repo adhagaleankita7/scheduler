@@ -3,6 +3,7 @@ import {
   CalendarRange,
   FileText,
   LayoutDashboard,
+  LayoutGrid,
   ListOrdered,
   PenSquare,
   Settings,
@@ -21,6 +22,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { href: "/pages", label: "Pages", icon: LayoutGrid },
   { href: "/composer", label: "Composer", icon: PenSquare },
   { href: "/planner", label: "7-day planner", icon: CalendarRange, exact: true },
   {
@@ -44,6 +46,7 @@ export const SETTINGS_ITEM: NavItem = {
 
 export const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/dashboard": { title: "Dashboard", subtitle: "Your publishing command center" },
+  "/pages": { title: "Pages", subtitle: "One dashboard for every page" },
   "/composer": { title: "Composer", subtitle: "Craft a post that sounds like you" },
   "/planner": { title: "7-day planner", subtitle: "A full week of content, handled" },
   "/planner/month": { title: "30-day planner", subtitle: "A full month of content, handled" },

@@ -1,4 +1,5 @@
-import { addDaysToDateKey, todayDateKey, zonedDateTimeToUtc } from "@/lib/scheduling/timezone";
+import { addDaysToDateKey, formatInZone, todayDateKey, zonedDateTimeToUtc } from "@/lib/scheduling/timezone";
+import { matchesTarget, type ParsedTarget } from "@/lib/targets";
 import type {
   ActivityPoint,
   DashboardData,
@@ -325,17 +326,22 @@ export function demoAccounts() {
   return { accounts: [account], pages };
 }
 
-export function demoActivity(now = new Date()): ActivityPoint[] {
+export function demoActivity(posts: Post[] = demoPosts(), now = new Date()): ActivityPoint[] {
   const tz = "Asia/Kolkata";
   const today = todayDateKey(tz, now);
   return Array.from({ length: 7 }).map((_, index) => {
     const dateKey = addDaysToDateKey(today, index - 6);
-    return {
-      date: dateKey,
-      scheduled: 1,
-      published: index < 6 ? 1 : 1,
-      failed: index === 5 ? 1 : 0,
-    };
+    const scheduled = posts.filter(
+      (post) =>
+        post.scheduled_for && formatInZone(post.scheduled_for, tz, "yyyy-MM-dd") === dateKey,
+    ).length;
+    const published = posts.filter(
+      (post) => post.published_at && formatInZone(post.published_at, tz, "yyyy-MM-dd") === dateKey,
+    ).length;
+    const failed = posts.filter(
+      (post) => post.status === "failed" && formatInZone(post.updated_at, tz, "yyyy-MM-dd") === dateKey,
+    ).length;
+    return { date: dateKey, scheduled, published, failed };
   });
 }
 
@@ -364,17 +370,27 @@ export function demoLogs(posts: PostWithRelations[]): PublishingLog[] {
     }));
 }
 
-export function demoDashboardData(): DashboardData {
-  const posts = demoPosts();
+export function demoDashboardData(target: ParsedTarget | null = null): DashboardData {
+  const all = demoPosts();
+  const posts = all.filter((post) => matchesTarget(post, target));
   const scheduled = posts.filter((post) => post.status === "scheduled");
+  const published = posts.filter((post) => post.status === "published");
   return {
     counts: {
       total: posts.length,
       scheduled: scheduled.length,
-      published: posts.filter((post) => post.status === "published").length,
+      published: published.length,
       draft: posts.filter((post) => post.status === "draft").length,
       failed: posts.filter((post) => post.status === "failed").length,
     },
+    engagement: published.reduce(
+      (totals, post) => ({
+        likes: totals.likes + post.like_count,
+        comments: totals.comments + post.comment_count,
+        shares: totals.shares + post.share_count,
+      }),
+      { likes: 0, comments: 0, shares: 0 },
+    ),
     nextPost: scheduled[0] ?? null,
     recent: [...posts]
       .filter((post) => post.status === "published" || post.status === "failed")
@@ -385,7 +401,7 @@ export function demoDashboardData(): DashboardData {
       )
       .slice(0, 5),
     upcoming: scheduled.slice(0, 5),
-    activity: demoActivity(),
+    activity: demoActivity(posts),
     weeklyTarget: 7,
   };
 }

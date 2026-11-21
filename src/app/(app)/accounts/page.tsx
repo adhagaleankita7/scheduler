@@ -5,13 +5,18 @@ import {
   Building2,
   Check,
   CheckCircle2,
+  ChevronRight,
+  Clock3,
   ExternalLink,
   Facebook,
   FlaskConical,
   KeyRound,
   Linkedin,
+  MessageCircle,
   RefreshCw,
+  Send,
   ShieldCheck,
+  ThumbsUp,
   UserRound,
   X,
 } from "lucide-react";
@@ -24,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DisconnectAccountButton } from "@/components/accounts/disconnect-account-button";
 import { getAccountsOverview } from "@/lib/data/accounts";
+import { getTargetAnalytics, type TargetSummary } from "@/lib/data/targets";
 import { requireSession } from "@/lib/session";
 import {
   getFacebookScopes,
@@ -43,7 +49,7 @@ import {
 import { isMockProviderAccountId } from "@/lib/linkedin/mock-account";
 import { isMockFacebookAccountId } from "@/lib/facebook/mock-account";
 import type { AccountStatus, SocialAccount, SocialPage } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, formatNumber } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Accounts" };
 export const dynamic = "force-dynamic";
@@ -174,10 +180,13 @@ function ConnectFacebookButton({
   );
 }
 
-function PageRow({ page }: { page: SocialPage }) {
+function PageRow({ page, summary }: { page: SocialPage; summary?: TargetSummary }) {
   const isFacebook = page.provider === "facebook";
   return (
-    <div className="flex items-start gap-2.5 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5">
+    <Link
+      href={`/pages/${page.id}`}
+      className="group flex items-start gap-2.5 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5 transition-colors hover:border-primary/25 hover:bg-muted/45"
+    >
       <TargetAvatar
         name={page.name}
         src={page.logo_url}
@@ -206,6 +215,23 @@ function PageRow({ page }: { page: SocialPage }) {
               : ` · linkedin.com/company/${page.vanity_name}`
             : ""}
         </p>
+        {summary && (
+          <div className="text-muted-foreground mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10.5px] tabular-nums">
+            <span className="inline-flex items-center gap-1" title="Published posts">
+              <Send className="size-2.5 text-emerald-500" /> {formatNumber(summary.counts.published)}
+            </span>
+            <span className="inline-flex items-center gap-1" title="Pending posts">
+              <Clock3 className="size-2.5 text-blue-500" /> {formatNumber(summary.counts.scheduled)}
+            </span>
+            <span className="inline-flex items-center gap-1" title="Likes">
+              <ThumbsUp className="size-2.5 text-blue-400" /> {formatNumber(summary.engagement.likes)}
+            </span>
+            <span className="inline-flex items-center gap-1" title="Comments">
+              <MessageCircle className="size-2.5 text-violet-400" />{" "}
+              {formatNumber(summary.engagement.comments)}
+            </span>
+          </div>
+        )}
         {!page.can_publish && (
           <p className="mt-1 text-[10.5px] leading-relaxed text-amber-600 dark:text-amber-400">
             {isFacebook
@@ -214,19 +240,22 @@ function PageRow({ page }: { page: SocialPage }) {
           </p>
         )}
       </div>
-    </div>
+      <ChevronRight className="mt-1 size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
+    </Link>
   );
 }
 
 function AccountCard({
   account,
   pages,
+  summaries,
   timezone,
   demo,
   organizationScopesConfigured,
 }: {
   account: SocialAccount;
   pages: SocialPage[];
+  summaries: Record<string, TargetSummary>;
   timezone: string;
   demo: boolean;
   organizationScopesConfigured: boolean;
@@ -400,7 +429,7 @@ function AccountCard({
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">
               {accountPages.map((page) => (
-                <PageRow key={page.id} page={page} />
+                <PageRow key={page.id} page={page} summary={summaries[page.id]} />
               ))}
             </div>
           )}
@@ -586,11 +615,16 @@ export default async function AccountsPage({
 }: {
   searchParams: Promise<AccountsSearchParams>;
 }) {
-  const [session, overview, params] = await Promise.all([
+  const [session, overview, analytics, params] = await Promise.all([
     requireSession(),
     getAccountsOverview(),
+    getTargetAnalytics(),
     searchParams,
   ]);
+  const summaries: Record<string, TargetSummary> = {};
+  for (const target of analytics.targets) {
+    if (target.pageId) summaries[target.pageId] = target;
+  }
   const timezone = session.profile.timezone || "Asia/Kolkata";
   const configured = isLinkedInConfigured();
   const mock = isLinkedInMockMode();
@@ -718,6 +752,7 @@ export default async function AccountsPage({
                 key={account.id}
                 account={account}
                 pages={overview.pages}
+                summaries={summaries}
                 timezone={timezone}
                 demo={session.demo}
                 organizationScopesConfigured={organizationScopesConfigured}

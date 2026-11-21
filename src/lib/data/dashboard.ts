@@ -2,17 +2,42 @@ import { requireSession } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { demoDashboardData } from "@/lib/demo/fixtures";
 import { hydratePosts } from "@/lib/data/hydrate";
+import { parseTargetParam, type ParsedTarget } from "@/lib/targets";
 import {
   addDaysToDateKey,
   formatInZone,
   todayDateKey,
   zonedDateTimeToUtc,
 } from "@/lib/scheduling/timezone";
-import type { ActivityPoint, DashboardData, Post, PostStatus } from "@/lib/types";
+import type {
+  ActivityPoint,
+  DashboardData,
+  EngagementTotals,
+  Post,
+  PostStatus,
+} from "@/lib/types";
 
-async function countPosts(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * Start a posts query already scoped to the workspace (RLS) and, when the user
+ * picked a page in the dashboard filter, to that exact target.
+ */
+function postsQuery(supabase: Supabase, workspaceId: string, target: ParsedTarget | null) {
+  let query = supabase.from("posts").select("*").eq("workspace_id", workspaceId);
+  if (target) {
+    query = query.eq("social_account_id", target.accountId);
+    query = target.pageId
+      ? query.eq("social_page_id", target.pageId)
+      : query.is("social_page_id", null);
+  }
+  return query;
+}
+
+function postCountQuery(
+  supabase: Supabase,
   workspaceId: string,
+  target: ParsedTarget | null,
   status?: PostStatus,
 ) {
   let query = supabase
@@ -20,16 +45,34 @@ async function countPosts(
     .select("id", { count: "exact", head: true })
     .eq("workspace_id", workspaceId);
   if (status) query = query.eq("status", status);
-  const { count } = await query;
+  if (target) {
+    query = query.eq("social_account_id", target.accountId);
+    query = target.pageId
+      ? query.eq("social_page_id", target.pageId)
+      : query.is("social_page_id", null);
+  }
+  return query;
+}
+
+async function countPosts(
+  supabase: Supabase,
+  workspaceId: string,
+  target: ParsedTarget | null,
+  status?: PostStatus,
+) {
+  const { count } = await postCountQuery(supabase, workspaceId, target, status);
   return count ?? 0;
 }
 
-export async function getDashboardData(): Promise<DashboardData & { demo: boolean; timezone: string }> {
+export async function getDashboardData(
+  options: { target?: string } = {},
+): Promise<DashboardData & { demo: boolean; timezone: string }> {
   const session = await requireSession();
   const timezone = session.profile.timezone || "Asia/Kolkata";
+  const target = parseTargetParam(options.target);
 
   if (session.demo) {
-    return { ...demoDashboardData(), demo: true, timezone };
+    return { ...demoDashboardData(target), demo: true, timezone };
   }
 
   const supabase = await createClient();
@@ -53,57 +96,56 @@ export async function getDashboardData(): Promise<DashboardData & { demo: boolea
     activityResult,
     publishedActivityResult,
     failedActivityResult,
+    engagementResult,
   ] = await Promise.all([
-    countPosts(supabase, workspaceId),
-    countPosts(supabase, workspaceId, "scheduled"),
-    countPosts(supabase, workspaceId, "published"),
-    countPosts(supabase, workspaceId, "draft"),
-    countPosts(supabase, workspaceId, "failed"),
-    supabase
-      .from("posts")
-      .select("*")
-      .eq("workspace_id", workspaceId)
+    countPosts(supabase, workspaceId, target),
+    countPosts(supabase, workspaceId, target, "scheduled"),
+    countPosts(supabase, workspaceId, target, "published"),
+    countPosts(supabase, workspaceId, target, "draft"),
+    countPosts(supabase, workspaceId, target, "failed"),
+    postsQuery(supabase, workspaceId, target)
       .eq("status", "scheduled")
       .gte("scheduled_for", nowIso)
       .order("scheduled_for", { ascending: true })
       .limit(1)
       .maybeSingle(),
-    supabase
-      .from("posts")
-      .select("*")
-      .eq("workspace_id", workspaceId)
+    postsQuery(supabase, workspaceId, target)
       .eq("status", "scheduled")
       .gte("scheduled_for", nowIso)
       .order("scheduled_for", { ascending: true })
       .limit(5),
-    supabase
-      .from("posts")
-      .select("*")
-      .eq("workspace_id", workspaceId)
+    postsQuery(supabase, workspaceId, target)
       .in("status", ["published", "failed"])
       .order("updated_at", { ascending: false })
       .limit(5),
-    supabase
-      .from("posts")
-      .select("scheduled_for, status")
-      .eq("workspace_id", workspaceId)
+    postsQuery(supabase, workspaceId, target)
       .not("scheduled_for", "is", null)
       .gte("scheduled_for", startIso)
       .lt("scheduled_for", endIso),
-    supabase
-      .from("posts")
-      .select("published_at")
-      .eq("workspace_id", workspaceId)
+    postsQuery(supabase, workspaceId, target)
       .not("published_at", "is", null)
       .gte("published_at", startIso)
       .lt("published_at", endIso),
-    supabase
-      .from("publishing_logs")
-      .select("created_at")
-      .eq("workspace_id", workspaceId)
-      .eq("status", "failure")
-      .gte("created_at", startIso)
-      .lt("created_at", endIso),
+    // Failures are counted from posts (not publishing_logs) so the number can
+    // be scoped to the selected page.
+    postsQuery(supabase, workspaceId, target)
+      .eq("status", "failed")
+      .gte("updated_at", startIso)
+      .lt("updated_at", endIso),
+    (() => {
+      let query = supabase
+        .from("posts")
+        .select("like_count, comment_count, share_count")
+        .eq("workspace_id", workspaceId)
+        .eq("status", "published");
+      if (target) {
+        query = query.eq("social_account_id", target.accountId);
+        query = target.pageId
+          ? query.eq("social_page_id", target.pageId)
+          : query.is("social_page_id", null);
+      }
+      return query;
+    })(),
   ]);
 
   const nextPost = nextResult.data
@@ -122,10 +164,19 @@ export async function getDashboardData(): Promise<DashboardData & { demo: boolea
       (row) => row.published_at && formatInZone(row.published_at, timezone, "yyyy-MM-dd") === dateKey,
     ).length;
     const failed = (failedActivityResult.data ?? []).filter(
-      (row) => formatInZone(row.created_at, timezone, "yyyy-MM-dd") === dateKey,
+      (row) => formatInZone(row.updated_at, timezone, "yyyy-MM-dd") === dateKey,
     ).length;
     return { date: dateKey, scheduled, published, failed };
   });
+
+  const engagement = (engagementResult.data ?? []).reduce<EngagementTotals>(
+    (totals, row) => ({
+      likes: totals.likes + (row.like_count ?? 0),
+      comments: totals.comments + (row.comment_count ?? 0),
+      shares: totals.shares + (row.share_count ?? 0),
+    }),
+    { likes: 0, comments: 0, shares: 0 },
+  );
 
   return {
     counts: {
@@ -135,6 +186,7 @@ export async function getDashboardData(): Promise<DashboardData & { demo: boolea
       draft: draftCount,
       failed: failedCount,
     },
+    engagement,
     nextPost,
     recent,
     upcoming,
