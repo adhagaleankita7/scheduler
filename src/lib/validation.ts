@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isValidTimeZone, normalizeTime } from "@/lib/scheduling/timezone";
 
 export const MAX_POST_LENGTH = 3000;
+export const MAX_FIRST_COMMENT_LENGTH = 1250;
 
 export const targetValueSchema = z
   .string()
@@ -30,6 +31,15 @@ export const isoDateTimeSchema = z
 export const savePostSchema = z.object({
   id: z.string().uuid().optional(),
   content: postContentSchema,
+  firstComment: z
+    .string()
+    .trim()
+    .max(
+      MAX_FIRST_COMMENT_LENGTH,
+      `First comments can be at most ${MAX_FIRST_COMMENT_LENGTH.toLocaleString()} characters`,
+    )
+    .optional()
+    .nullable(),
   target: targetValueSchema,
   scheduledFor: z.string().optional().nullable(),
   mode: z.enum(["draft", "schedule", "now"]).default("draft"),

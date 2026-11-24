@@ -393,8 +393,8 @@ connected.
   (`mark_post_published` returns row count 1). Provider post ids are unique per account, so a second
   worker cannot create a duplicate row.
 - **Failure** is classified:
-  - Non-retryable: `invalid_token`, `expired_token`, `missing_permissions`, `duplicate_post`,
-    `invalid_content` → `status = 'failed'`.
+  - Non-retryable: `invalid_token`, `expired_token`, `app_access_blocked`, `missing_permissions`,
+    `duplicate_post`, `invalid_content` → `status = 'failed'`.
   - Retryable: `rate_limited`, `network_error`, `linkedin_server_error`, image upload failures →
     back to `scheduled` with `next_retry_at = now + min(2^(attempt-1) × 60s, 1h)`.
 - Every attempt writes a `publishing_logs` row. See [docs/publishing-model.md](docs/publishing-model.md)

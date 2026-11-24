@@ -36,7 +36,11 @@ import {
   zonedDateTimeToUtc,
   zonedInputToIso,
 } from "@/lib/scheduling/timezone";
-import { MAX_POST_LENGTH, countCharacters } from "@/lib/validation";
+import {
+  MAX_FIRST_COMMENT_LENGTH,
+  MAX_POST_LENGTH,
+  countCharacters,
+} from "@/lib/validation";
 import { randomUUID } from "@/lib/uuid";
 import type { PostStatus, PublishTargetOption } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -49,6 +53,7 @@ const HASHTAG_SUGGESTIONS = ["#LinkedIn", "#Growth", "#SaaS", "#ContentStrategy"
 export type ComposerInitial = {
   id: string | null;
   content: string;
+  firstComment: string | null;
   target: string;
   scheduledFor: string | null;
   status: PostStatus | null;
@@ -89,6 +94,7 @@ export function Composer({
 
   const firstTarget = targets.find((target) => target.canPublish)?.value ?? "";
   const [content, setContent] = useState(initial.content);
+  const [firstComment, setFirstComment] = useState(initial.firstComment ?? "");
   const [target, setTarget] = useState(initial.target || firstTarget);
   const [when, setWhen] = useState(() =>
     initial.scheduledFor
@@ -211,6 +217,7 @@ export function Composer({
       const result = await savePost({
         id: initial.id ?? undefined,
         content: content.trim(),
+        firstComment: firstComment.trim() || null,
         target,
         scheduledFor,
         mode,
@@ -389,6 +396,38 @@ export function Composer({
                 />
               </div>
             )}
+          </div>
+
+          <div className="mt-4 border-t border-border/70 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label htmlFor="first-comment" className="text-[12.5px]">
+                First comment{" "}
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <span
+                className={cn(
+                  "text-[11px] font-medium tabular-nums",
+                  countCharacters(firstComment) > MAX_FIRST_COMMENT_LENGTH
+                    ? "text-destructive"
+                    : "text-muted-foreground",
+                )}
+              >
+                {countCharacters(firstComment).toLocaleString()} /{" "}
+                {MAX_FIRST_COMMENT_LENGTH.toLocaleString()}
+              </span>
+            </div>
+            <Textarea
+              id="first-comment"
+              value={firstComment}
+              onChange={(event) => setFirstComment(event.target.value)}
+              maxLength={MAX_FIRST_COMMENT_LENGTH}
+              placeholder="Post a comment right after this goes live — extra links, hashtags or context. Works on LinkedIn and Facebook."
+              className="mt-2 min-h-[64px] resize-y text-[12.5px]"
+            />
+            <p className="text-muted-foreground mt-1.5 text-[10.5px]">
+              LINKFLOW posts this as the first comment after the post is published. If it fails,
+              the post itself stays live.
+            </p>
           </div>
         </div>
 

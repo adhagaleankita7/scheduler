@@ -15,6 +15,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.0";
 import {
   LinkedInPublishError,
+  commentOnLinkedInPost,
   extractDuplicateUrn,
   isRetryableError,
   publishToLinkedIn,
@@ -24,6 +25,7 @@ import {
 } from "../_shared/linkedin.ts";
 import {
   FacebookPublishError,
+  commentOnFacebookPost,
   isRetryableFacebookError,
   publishToFacebookPage,
   refreshFacebookToken,
@@ -45,6 +47,7 @@ type PostRow = {
   social_page_id: string | null;
   target_type: "member" | "organization";
   content: string;
+  first_comment: string | null;
   attempt_count: number;
   idempotency_key: string;
 };
@@ -582,7 +585,11 @@ async function publishOne(
             details: null,
           };
 
-    if (publishError.code === "invalid_token" || publishError.code === "expired_token") {
+    if (
+      publishError.code === "invalid_token" ||
+      publishError.code === "expired_token" ||
+      publishError.code === "app_access_blocked"
+    ) {
       await supabase
         .from("social_accounts")
         .update({ status: "needs_reconnect", last_error: publishError.message })
@@ -688,6 +695,53 @@ async function publishOne(
     metadata: { providerPostUrl: result.providerPostUrl, imageUrn: result.imageUrn },
   });
 
+  // The optional first comment is best-effort: the post is already live, so a
+  // comment failure must never flip the post to failed or trigger a re-publish.
+  if (!result.isMock && post.first_comment?.trim()) {
+    try {
+      if (provider === "facebook") {
+        await commentOnFacebookPost({
+          pageId: facebookPageId!,
+          postId: result.providerPostId,
+          message: post.first_comment.trim(),
+          accessToken,
+          graphVersion: env("FACEBOOK_GRAPH_VERSION") || "v23.0",
+        });
+      } else {
+        await commentOnLinkedInPost({
+          providerPostId: result.providerPostId,
+          memberId: tokens.provider_account_id,
+          organizationId,
+          message: post.first_comment.trim(),
+          accessToken,
+          apiVersion: env("LINKEDIN_API_VERSION") || "202610",
+        });
+      }
+      await logAttempt(supabase, {
+        post,
+        status: "success",
+        message: "First comment posted.",
+        provider,
+        providerPostId: result.providerPostId,
+        httpStatus: 200,
+        isMock: false,
+        metadata: { firstComment: true },
+      });
+    } catch (error) {
+      await logAttempt(supabase, {
+        post,
+        status: "skipped",
+        message: `Post published, but the first comment could not be added: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+        provider,
+        providerPostId: result.providerPostId,
+        errorCode: "first_comment_failed",
+        isMock: false,
+      });
+    }
+  }
+
   return { outcome: "published", message: result.providerPostId };
 }
 
@@ -708,20 +762,24 @@ type EngagementRow = {
 /**
  * Refresh like/comment counts for recently published posts. Runs at the end of
  * every worker tick; each post is refreshed about once every 15 minutes so the
- * provider APIs are never hammered. Failures are recorded on the post and never
- * block publishing.
+ * provider APIs are never hammered. Only the last 30 days are refreshed: older
+ * posts are unlikely to change and would otherwise consume the whole provider
+ * rate-limit budget forever. Failures are recorded on the post and never block
+ * publishing.
  */
 async function syncEngagement(
   supabase: ReturnType<typeof createClient>,
   summary: EngagementSummary,
 ) {
   const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const publishedCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await supabase
     .from("posts")
     .select("id, user_id, social_account_id, social_page_id, provider_post_id")
     .eq("status", "published")
     .eq("is_mock", false)
     .not("provider_post_id", "is", null)
+    .gte("published_at", publishedCutoff)
     .or(`engagement_synced_at.is.null,engagement_synced_at.lt.${cutoff}`)
     .order("engagement_synced_at", { ascending: true, nullsFirst: true })
     .limit(10);

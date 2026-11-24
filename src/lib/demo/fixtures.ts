@@ -129,6 +129,7 @@ function basePost(overrides: Partial<Post>): Post {
     schedule_id: null,
     target_type: "member",
     content: "",
+    first_comment: null,
     status: "draft",
     scheduled_for: null,
     published_at: null,

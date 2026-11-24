@@ -46,6 +46,7 @@ export default async function ComposerPage({
   const initial: ComposerInitial = {
     id: editing && source ? source.id : null,
     content: source?.content ?? "",
+    firstComment: source?.first_comment ?? null,
     target: source
       ? encodeTarget(source.social_account_id ?? "", source.social_page_id)
       : requestedTarget,

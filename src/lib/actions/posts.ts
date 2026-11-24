@@ -162,6 +162,7 @@ export async function savePost(
       .from("posts")
       .update({
         content: data.content,
+        first_comment: data.firstComment?.trim() || null,
         target_type: target.targetType,
         social_account_id: accountId,
         social_page_id: pageId,
@@ -233,6 +234,7 @@ export async function savePost(
       workspace_id: workspaceId,
       user_id: session.user.id,
       content: data.content,
+      first_comment: data.firstComment?.trim() || null,
       target_type: target.targetType,
       social_account_id: accountId,
       social_page_id: pageId,

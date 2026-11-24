@@ -155,4 +155,36 @@ describe("fetchFacebookEngagement", () => {
     expect(statsUrl).toContain("reactions.summary(total_count)");
     expect(statsUrl).toContain("access_token=page-token");
   });
+
+  it("treats a missing pages_read_user_content scope as unavailable", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/me/accounts")) {
+        return new Response(
+          JSON.stringify({ data: [{ id: "104231998", access_token: "page-token" }] }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          error: {
+            message:
+              "(#10) This endpoint requires the 'pages_read_user_content' permission or the 'Page Public Content Access' feature.",
+            code: 10,
+          },
+        }),
+        { status: 400 },
+      );
+    }) as unknown as typeof fetch;
+
+    await expect(
+      fetchFacebookEngagement({
+        accessToken: "member-token",
+        pageId: "104231998",
+        graphVersion: "v23.0",
+        providerPostId: "104231998_777",
+        fetchImpl,
+      }),
+    ).rejects.toBeInstanceOf(EngagementUnavailableError);
+  });
 });

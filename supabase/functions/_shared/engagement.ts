@@ -196,6 +196,18 @@ export async function fetchFacebookEngagement(input: {
       );
     }
     if (!response.ok) {
+      // Reactions and comments on a Page post need pages_read_user_content
+      // (or Page Public Content Access). With only pages_read_engagement Meta
+      // answers code 10 — the stats are optional, so do not surface it as a
+      // publishing failure on the post.
+      if (
+        response.status === 400 &&
+        /pages_read_user_content|Page Public Content Access/i.test(text)
+      ) {
+        throw new EngagementUnavailableError(
+          "Facebook needs pages_read_user_content to read post reactions and comments.",
+        );
+      }
       throw new EngagementError(
         `Facebook stats request failed (HTTP ${response.status}).`,
         response.status,

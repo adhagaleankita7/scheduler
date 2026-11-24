@@ -23,6 +23,7 @@ export type Post = {
   schedule_id: string | null;
   target_type: TargetType;
   content: string;
+  first_comment: string | null;
   status: PostStatus;
   scheduled_for: string | null;
   published_at: string | null;

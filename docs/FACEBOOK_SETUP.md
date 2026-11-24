@@ -93,8 +93,11 @@ supabase secrets set FACEBOOK_APP_ID=... FACEBOOK_APP_SECRET=... FACEBOOK_GRAPH_
    long-lived (~60 day) member token.
 2. The token is stored in **Supabase Vault** as
    `facebook_access_token_<account-id>` — never in a public table.
-3. At publish time the worker asks `/me/accounts` for a fresh Page access token,
-   then posts to `/{page-id}/feed` (text) or `/{page-id}/photos` (image).
+3. At publish time the worker asks `/me/accounts` for a fresh Page access token.
+   Text posts go to `/{page-id}/feed`. Image posts upload the photo to
+   `/{page-id}/photos` with `published=false`, then create a `/{page-id}/feed`
+   post with `attached_media[0]` — this keeps it a normal Page post with an
+   image instead of a photo-tab story.
 4. Each attempt is written to `publishing_logs` with HTTP status and error code.
 5. Retries, backoff and the every-minute scheduler are the same ones used for
    LinkedIn.
@@ -107,5 +110,6 @@ supabase secrets set FACEBOOK_APP_ID=... FACEBOOK_APP_SECRET=... FACEBOOK_GRAPH_
 | No Pages returned | Your user has no Admin/Editor role on any Page, or `pages_show_list` was not granted. |
 | Page is read-only | Ask a Page admin for an Admin/Editor role (or Business Manager access), then reconnect. |
 | `(#200) Permissions error` when publishing | `pages_manage_posts` was not approved/granted. Reconnect after App Review. |
+| `API access blocked` (error 5258005) on every call, even `/me` | Meta restricted the whole app. Open the Meta App Dashboard for the app, clear the restriction (App Review, Business Verification or Data Use Checkup), switch the app to Live if required, then reconnect Facebook in LINKFLOW. |
 | Token expired | Reconnect from **Accounts**. The worker also extends tokens in the last 3 days before expiry. |
 | `Invalid Scopes` on the consent screen | Keep `FACEBOOK_SCOPES` to permissions the app has been approved for. |

@@ -3,6 +3,7 @@ import {
   FacebookPublishError,
   FACEBOOK_MESSAGE_LIMIT,
   classifyFacebookStatus,
+  commentOnFacebookPost,
   fetchPageAccessToken,
   graphBaseUrl,
   isRetryableFacebookError,
@@ -93,6 +94,23 @@ describe("classifyFacebookStatus", () => {
     }
   });
 
+  it("separates a Meta app-level API block from page permissions", () => {
+    const classified = classifyFacebookStatus(
+      400,
+      JSON.stringify({
+        error: {
+          message: "API access blocked.",
+          type: "OAuthException",
+          code: 200,
+          error_subcode: 5258005,
+        },
+      }),
+    );
+    expect(classified.code).toBe("app_access_blocked");
+    expect(classified.retryable).toBe(false);
+    expect(classified.message).toMatch(/Meta App Dashboard/i);
+  });
+
   it("surfaces the provider message for rejected content", () => {
     const classified = classifyFacebookStatus(
       400,
@@ -181,6 +199,26 @@ describe("fetchPageAccessToken", () => {
     ).rejects.toMatchObject({ code: "missing_permissions", retryable: false });
   });
 
+  it("surfaces an app-level API block while listing pages", async () => {
+    const fetchImpl = vi.fn(async () =>
+      response(
+        400,
+        JSON.stringify({
+          error: { message: "API access blocked.", code: 200, error_subcode: 5258005 },
+        }),
+      ),
+    ) as unknown as typeof fetch;
+
+    await expect(
+      fetchPageAccessToken({
+        accessToken: "member-token",
+        pageId: "104231998",
+        graphVersion: "v23.0",
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ code: "app_access_blocked", retryable: false });
+  });
+
   it("reports an expired member token while listing pages", async () => {
     const fetchImpl = vi.fn(async () =>
       response(400, JSON.stringify({ error: { code: 190, message: "Token expired" } })),
@@ -205,7 +243,7 @@ describe("publishToFacebookPage", () => {
 
     expect(result).toMatchObject({
       providerPostId: "104231998_987654",
-      providerPostUrl: "https://www.facebook.com/104231998_987654",
+      providerPostUrl: "https://www.facebook.com/104231998/posts/987654",
       httpStatus: 200,
       isMock: false,
       imageUrn: null,
@@ -220,12 +258,15 @@ describe("publishToFacebookPage", () => {
     expect(body.get("access_token")).toBe("page-token");
   });
 
-  it("uploads an image to /photos with the Page token", async () => {
+  it("uploads an unpublished photo then posts it to the Page feed", async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes("/me/accounts")) {
         return accountsResponse([{ id: "104231998", access_token: "page-token" }]);
       }
-      return response(200, JSON.stringify({ id: "photo-1", post_id: "104231998_111" }));
+      if (url.endsWith("/photos")) {
+        return response(200, JSON.stringify({ id: "photo-1" }));
+      }
+      return response(200, JSON.stringify({ id: "104231998_111" }));
     }) as unknown as typeof fetch;
 
     const result = await publishToFacebookPage(
@@ -235,37 +276,107 @@ describe("publishToFacebookPage", () => {
       }),
     );
 
+    // The post is the feed story, not the photo upload — so Facebook treats it
+    // as a normal post that contains an image.
     expect(result.providerPostId).toBe("104231998_111");
+    expect(result.providerPostUrl).toBe("https://www.facebook.com/104231998/posts/111");
     expect(result.imageUrn).toBe("photo-1");
 
     const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls).toHaveLength(3);
     expect(calls[1][0]).toBe("https://graph.facebook.com/v23.0/104231998/photos");
+    expect(calls[2][0]).toBe("https://graph.facebook.com/v23.0/104231998/feed");
 
+    // Step 1: upload the image as unpublished, without a message.
     const form = calls[1][1].body as FormData;
-    expect(form.get("message")).toBe("Hello Facebook");
-    expect(form.get("published")).toBe("true");
+    expect(form.get("published")).toBe("false");
+    expect(form.get("message")).toBeNull();
     expect(form.get("access_token")).toBe("page-token");
     const source = form.get("source");
     expect(source).toBeTruthy();
     expect((source as Blob).type).toBe("image/png");
     expect((source as Blob).size).toBe(3);
+
+    // Step 2: create the feed post with the photo attached.
+    const body = calls[2][1].body as URLSearchParams;
+    expect(body.get("message")).toBe("Hello Facebook");
+    expect(body.get("access_token")).toBe("page-token");
+    expect(body.get("attached_media[0]")).toBe(JSON.stringify({ media_fbid: "photo-1" }));
   });
 
-  it("falls back to the photo id when Facebook omits post_id", async () => {
+  it("fails with a retryable error when the photo upload returns no id", async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes("/me/accounts")) {
         return accountsResponse([{ id: "104231998", access_token: "page-token" }]);
       }
-      return response(200, JSON.stringify({ id: "photo-9" }));
+      return response(200, JSON.stringify({}));
     }) as unknown as typeof fetch;
 
-    const result = await publishToFacebookPage(
-      baseInput({
-        fetchImpl,
-        image: { bytes: new Uint8Array([1]), mimeType: "image/jpeg" },
-      }),
+    await expect(
+      publishToFacebookPage(
+        baseInput({
+          fetchImpl,
+          image: { bytes: new Uint8Array([1]), mimeType: "image/jpeg" },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "image_upload_failed", retryable: true });
+  });
+
+  it("deletes the unpublished photo when the feed post fails", async () => {
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push([url, init]);
+      if (url.includes("/me/accounts")) {
+        return accountsResponse([{ id: "104231998", access_token: "page-token" }]);
+      }
+      if (url.endsWith("/photos")) {
+        return response(200, JSON.stringify({ id: "photo-orphan" }));
+      }
+      if (url.endsWith("/feed")) {
+        return response(500, "{}");
+      }
+      return response(200, JSON.stringify({ success: true }));
+    }) as unknown as typeof fetch;
+
+    await expect(
+      publishToFacebookPage(
+        baseInput({
+          fetchImpl,
+          image: { bytes: new Uint8Array([1]), mimeType: "image/jpeg" },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "facebook_server_error", retryable: true });
+
+    const cleanup = calls.find(
+      ([url, init]) => init?.method === "DELETE" && url.includes("photo-orphan"),
     );
-    expect(result.providerPostId).toBe("photo-9");
+    expect(cleanup).toBeTruthy();
+    expect(cleanup![0]).toContain("access_token=page-token");
+  });
+
+  it("never lets a failed photo cleanup mask the original error", async () => {
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/me/accounts")) {
+        return accountsResponse([{ id: "104231998", access_token: "page-token" }]);
+      }
+      if (url.endsWith("/photos")) {
+        return response(200, JSON.stringify({ id: "photo-orphan" }));
+      }
+      if (url.endsWith("/feed")) {
+        return response(400, JSON.stringify({ error: { code: 200, message: "(#200) Permissions error" } }));
+      }
+      if (init?.method === "DELETE") throw new TypeError("cleanup network failed");
+      return response(200, "{}");
+    }) as unknown as typeof fetch;
+
+    await expect(
+      publishToFacebookPage(
+        baseInput({
+          fetchImpl,
+          image: { bytes: new Uint8Array([1]), mimeType: "image/jpeg" },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "missing_permissions", retryable: false });
   });
 
   it("rejects invalid input before calling Facebook", async () => {
@@ -386,5 +497,53 @@ describe("refreshFacebookToken", () => {
         fetchImpl,
       }),
     ).rejects.toMatchObject({ code: "invalid_token", retryable: false });
+  });
+});
+
+describe("commentOnFacebookPost", () => {
+  it("posts the comment as the Page using a fresh Page token", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes("/me/accounts")) {
+        return accountsResponse([{ id: "104231998", access_token: "page-token" }]);
+      }
+      return response(200, JSON.stringify({ id: "comment-1" }));
+    }) as unknown as typeof fetch;
+
+    await expect(
+      commentOnFacebookPost({
+        pageId: "104231998",
+        postId: "104231998_111",
+        message: "Links and hashtags",
+        accessToken: "member-token",
+        graphVersion: "v23.0",
+        fetchImpl,
+      }),
+    ).resolves.toBe("comment-1");
+
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[1][0]).toBe("https://graph.facebook.com/v23.0/104231998_111/comments");
+    const body = calls[1][1].body as URLSearchParams;
+    expect(body.get("message")).toBe("Links and hashtags");
+    expect(body.get("access_token")).toBe("page-token");
+  });
+
+  it("surfaces a Graph error so the worker can log it", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes("/me/accounts")) {
+        return accountsResponse([{ id: "104231998", access_token: "page-token" }]);
+      }
+      return response(400, JSON.stringify({ error: { code: 100, message: "(#100) Invalid comment" } }));
+    }) as unknown as typeof fetch;
+
+    await expect(
+      commentOnFacebookPost({
+        pageId: "104231998",
+        postId: "104231998_111",
+        message: "x",
+        accessToken: "member-token",
+        graphVersion: "v23.0",
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ code: "invalid_content" });
   });
 });

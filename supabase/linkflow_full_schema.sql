@@ -1,8 +1,8 @@
-﻿-- ===========================================================================
+-- ===========================================================================
 -- LINKFLOW - full schema bundle
 -- ===========================================================================
 -- GENERATED FILE. Do not edit by hand.
--- Source: supabase/migrations/ (8 files, in filename order)
+-- Source: supabase/migrations/ (10 files, in filename order)
 -- Regenerate: npm run sql:bundle
 --
 -- Paste this whole file into the Supabase SQL Editor and run it once.
@@ -12,7 +12,7 @@
 -- 20260101000100_core_schema.sql
 -- ---------------------------------------------------------------------------
 -- ============================================================================
--- LINKFLOW Â· 0001 â€” Core schema, RLS, storage
+-- LINKFLOW · 0001 — Core schema, RLS, storage
 -- ============================================================================
 
 create extension if not exists pgcrypto with schema extensions;
@@ -59,7 +59,7 @@ create trigger profiles_set_updated_at
   for each row execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- social_accounts â€” tokens live in Vault, never in this table
+-- social_accounts — tokens live in Vault, never in this table
 -- ---------------------------------------------------------------------------
 create table if not exists public.social_accounts (
   id uuid primary key default gen_random_uuid(),
@@ -90,7 +90,7 @@ create trigger social_accounts_set_updated_at
   for each row execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- social_pages â€” authorized LinkedIn company pages
+-- social_pages — authorized LinkedIn company pages
 -- ---------------------------------------------------------------------------
 create table if not exists public.social_pages (
   id uuid primary key default gen_random_uuid(),
@@ -118,7 +118,7 @@ create trigger social_pages_set_updated_at
   for each row execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- publishing_schedules â€” a named weekly or 30-day plan
+-- publishing_schedules — a named weekly or 30-day plan
 -- ---------------------------------------------------------------------------
 create table if not exists public.publishing_schedules (
   id uuid primary key default gen_random_uuid(),
@@ -482,7 +482,7 @@ create policy "queue_settings_all_own" on public.queue_settings
   with check ((select auth.uid()) = user_id);
 
 -- ---------------------------------------------------------------------------
--- Table privileges â€” authenticated users may not write engine tables directly
+-- Table privileges — authenticated users may not write engine tables directly
 -- ---------------------------------------------------------------------------
 -- Explicit grants so the app does not depend on a project's default privileges.
 -- RLS still restricts every row to its owner. `anon` only needs to probe
@@ -560,7 +560,7 @@ revoke all on public.oauth_states from anon, authenticated;
 -- 20260101000200_publishing_engine.sql
 -- ---------------------------------------------------------------------------
 -- ============================================================================
--- LINKFLOW Â· 0002 â€” Vault token storage + publishing engine primitives
+-- LINKFLOW · 0002 — Vault token storage + publishing engine primitives
 -- ============================================================================
 
 -- Supabase Vault is pre-installed on hosted projects. Guard so local setups
@@ -634,7 +634,7 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Read tokens â€” service role only (used by the Edge Function).
+-- Read tokens — service role only (used by the Edge Function).
 -- ---------------------------------------------------------------------------
 create or replace function public.get_social_tokens(p_account_id uuid)
 returns table (
@@ -953,7 +953,7 @@ grant execute on function public.trigger_publish_function() to service_role;
 -- 20260101000300_cron.sql
 -- ---------------------------------------------------------------------------
 -- ============================================================================
--- LINKFLOW Â· 0003 â€” pg_cron + pg_net every-minute publisher
+-- LINKFLOW · 0003 — pg_cron + pg_net every-minute publisher
 -- ============================================================================
 -- Before enabling the schedule, store these two secrets in Vault:
 --   select vault.create_secret(
@@ -1087,7 +1087,7 @@ where u.id = p.id
 -- 20261114000100_health.sql
 -- ---------------------------------------------------------------------------
 -- ============================================================================
--- LINKFLOW Â· 0005 â€” Service-role readiness report
+-- LINKFLOW · 0005 — Service-role readiness report
 -- ============================================================================
 -- Exposes only booleans/counts. Secret *values* are never read or returned.
 -- Used by `npm run doctor` and safe to call from any trusted server process.
@@ -1212,7 +1212,7 @@ comment on column public.oauth_states.scopes is
 -- 20261116000000_facebook_provider.sql
 -- ---------------------------------------------------------------------------
 -- ============================================================================
--- LINKFLOW Â· Facebook Pages provider
+-- LINKFLOW · Facebook Pages provider
 -- ============================================================================
 -- Adds Facebook as a second publishing provider next to LinkedIn.
 --
@@ -1542,12 +1542,11 @@ create index if not exists posts_engagement_sync_idx
   on public.posts (engagement_synced_at asc nulls first)
   where status = 'published' and is_mock = false;
 
+-- ---------------------------------------------------------------------------
+-- 20261119000100_workspaces.sql
+-- ---------------------------------------------------------------------------
 -- ============================================================================
--- Workspaces and collaborators (consolidated)
--- ============================================================================
--- Mirrors supabase/migrations/20261119000100_workspaces.sql.
--- ============================================================================
--- LINKFLOW Â· Workspaces and collaborators
+-- LINKFLOW · Workspaces and collaborators
 -- ============================================================================
 -- Turns the single-user schema into a shared workspace:
 --   * every user owns a workspace and can be invited to other workspaces
@@ -2265,7 +2264,7 @@ grant select, insert, update, delete on public.workspace_invites to authenticate
 grant select (workspace_id) on public.social_accounts to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 10. Storage policies â€” teammates share post images
+-- 10. Storage policies — teammates share post images
 -- ---------------------------------------------------------------------------
 drop policy if exists "post_media_objects_select_own" on storage.objects;
 drop policy if exists "post_media_objects_select_shared" on storage.objects;
@@ -2375,3 +2374,26 @@ $$;
 revoke all on function public.claim_due_posts(text, integer) from public, anon, authenticated;
 grant execute on function public.claim_due_posts(text, integer) to service_role;
 
+-- ---------------------------------------------------------------------------
+-- 20261123000000_post_first_comment.sql
+-- ---------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- post first comment
+-- ---------------------------------------------------------------------------
+-- Optional comment the worker posts immediately after a successful publish.
+-- This is a common scheduler feature: keep the post copy clean and put links
+-- or a long list of hashtags in the first comment instead.
+--
+-- 1250 characters is LinkedIn's per-comment limit, so enforce it everywhere.
+alter table public.posts
+  add column if not exists first_comment text;
+
+alter table public.posts
+  drop constraint if exists posts_first_comment_length;
+
+alter table public.posts
+  add constraint posts_first_comment_length
+  check (
+    first_comment is null
+    or char_length(btrim(first_comment)) between 1 and 1250
+  );

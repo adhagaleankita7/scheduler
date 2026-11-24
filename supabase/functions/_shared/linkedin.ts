@@ -401,6 +401,93 @@ export async function publishToLinkedIn(
   }
 }
 
+/**
+ * Only real share/ugcPost URNs can receive a comment. Mock results and the
+ * synthetic `accepted_` fallback have no server-side object to comment on.
+ */
+export function linkedInCommentUrn(providerPostId: string): string | null {
+  const trimmed = (providerPostId ?? "").trim();
+  if (/^urn:li:(?:share|ugcPost|activity):\d+$/i.test(trimmed)) return trimmed;
+  if (/^\d+$/.test(trimmed)) return `urn:li:share:${trimmed}`;
+  return null;
+}
+
+/**
+ * Post a comment as the member or company page that authored the post. Used for
+ * the optional "first comment" feature; callers treat failures as non-fatal.
+ */
+export async function commentOnLinkedInPost(input: {
+  providerPostId: string;
+  memberId: string;
+  organizationId?: string | null;
+  message: string;
+  accessToken: string;
+  apiVersion: string;
+  fetchImpl?: typeof fetch;
+}): Promise<string | null> {
+  if (!input.message.trim()) return null;
+
+  const urn = linkedInCommentUrn(input.providerPostId);
+  if (!urn) {
+    throw new LinkedInPublishError(
+      "invalid_content",
+      "LinkedIn returned a synthetic post id, so a first comment cannot be added.",
+    );
+  }
+
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const actor = buildAuthorUrn({
+    memberId: input.memberId,
+    organizationId: input.organizationId,
+  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
+
+  try {
+    const response = await fetchImpl(
+      `${LINKEDIN_API_BASE}/rest/socialActions/${encodeURIComponent(urn)}/comments`,
+      {
+        method: "POST",
+        headers: linkedInHeaders(input.accessToken, input.apiVersion),
+        body: JSON.stringify({
+          actor,
+          object: urn,
+          message: { text: input.message },
+        }),
+        signal: controller.signal,
+      },
+    );
+    await ensureOk(response, "post first comment");
+
+    const restliId = response.headers.get("x-restli-id")?.trim();
+    if (restliId) return restliId;
+
+    const text = await response.text().catch(() => "");
+    try {
+      const json = JSON.parse(text) as { id?: string };
+      return json.id ?? null;
+    } catch {
+      return null;
+    }
+  } catch (error) {
+    if (error instanceof LinkedInPublishError) throw error;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new LinkedInPublishError(
+        "network_error",
+        "The first comment to LinkedIn timed out.",
+        { retryable: true },
+      );
+    }
+    throw new LinkedInPublishError(
+      "network_error",
+      "Could not reach LinkedIn to post the first comment.",
+      { retryable: true, details: error instanceof Error ? error.message : String(error) },
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export type RefreshedTokens = {
   accessToken: string;
   refreshToken: string | null;

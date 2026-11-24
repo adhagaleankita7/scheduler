@@ -5,8 +5,10 @@ import {
   buildMockResult,
   buildPostPayload,
   classifyLinkedInStatus,
+  commentOnLinkedInPost,
   computeRetryDelaySeconds,
   extractErrorDetail,
+  linkedInCommentUrn,
   isRetryableError,
   publishToLinkedIn,
   refreshLinkedInToken,
@@ -424,5 +426,80 @@ describe("tokenNeedsRefresh", () => {
     expect(tokenNeedsRefresh("2026-01-15T10:06:00Z", 300, now)).toBe(false);
     expect(tokenNeedsRefresh(null, 300, now)).toBe(false);
     expect(tokenNeedsRefresh("not-a-date", 300, now)).toBe(false);
+  });
+});
+
+describe("linkedInCommentUrn", () => {
+  it("accepts real share and ugcPost URNs", () => {
+    expect(linkedInCommentUrn("urn:li:share:123")).toBe("urn:li:share:123");
+    expect(linkedInCommentUrn("urn:li:ugcPost:456")).toBe("urn:li:ugcPost:456");
+  });
+
+  it("promotes a numeric id and rejects synthetic ids", () => {
+    expect(linkedInCommentUrn("789")).toBe("urn:li:share:789");
+    expect(linkedInCommentUrn("urn:li:share:accepted_abc")).toBeNull();
+    expect(linkedInCommentUrn("urn:li:share:mock_abc")).toBeNull();
+  });
+});
+
+describe("commentOnLinkedInPost", () => {
+  it("posts a comment as the member that authored the post", async () => {
+    const fetchImpl = vi.fn(async () =>
+      response(201, JSON.stringify({ id: "comment-1" }), { "x-restli-id": "comment-1" }),
+    ) as unknown as typeof fetch;
+
+    await expect(
+      commentOnLinkedInPost({
+        providerPostId: "urn:li:share:123",
+        memberId: "member-123",
+        message: "More context",
+        accessToken: "token-abc",
+        apiVersion: "202601",
+        fetchImpl,
+      }),
+    ).resolves.toBe("comment-1");
+
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0][0]).toBe(
+      "https://api.linkedin.com/rest/socialActions/urn%3Ali%3Ashare%3A123/comments",
+    );
+    const body = JSON.parse(String(calls[0][1].body));
+    expect(body).toMatchObject({
+      actor: "urn:li:person:member-123",
+      object: "urn:li:share:123",
+      message: { text: "More context" },
+    });
+  });
+
+  it("uses the organization actor for a company post", async () => {
+    const fetchImpl = vi.fn(async () => response(201, "{}")) as unknown as typeof fetch;
+
+    await commentOnLinkedInPost({
+      providerPostId: "urn:li:share:123",
+      memberId: "member-123",
+      organizationId: "999",
+      message: "Company comment",
+      accessToken: "token-abc",
+      apiVersion: "202601",
+      fetchImpl,
+    });
+
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    expect(JSON.parse(String(calls[0][1].body)).actor).toBe("urn:li:organization:999");
+  });
+
+  it("refuses to comment on a synthetic post id", async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+    await expect(
+      commentOnLinkedInPost({
+        providerPostId: "urn:li:share:accepted_abc",
+        memberId: "member-123",
+        message: "x",
+        accessToken: "token-abc",
+        apiVersion: "202601",
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ code: "invalid_content" });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
