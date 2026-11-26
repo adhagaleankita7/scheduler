@@ -108,9 +108,11 @@ describe("zonedDateTimeToUtc", () => {
   });
 
   it("resolves the ambiguous fall-back hour deterministically", () => {
+    // 01:30 happens twice on 2026-11-01 in New York. date-fns-tz picks the first
+    // occurrence (EDT, -04:00); we pin the mapping so a library change is visible.
     const resolved = zonedDateTimeToUtc("2026-11-01", "01:30", "America/New_York");
-    expect(resolved.toISOString()).toBe("2026-11-01T06:30:00.000Z");
-    expect(formatInZone(resolved, "America/New_York", "XXX")).toBe("-05:00");
+    expect(resolved.toISOString()).toBe("2026-11-01T05:30:00.000Z");
+    expect(formatInZone(resolved, "America/New_York", "XXX")).toBe("-04:00");
   });
 
   it("throws on invalid input instead of silently scheduling", () => {
