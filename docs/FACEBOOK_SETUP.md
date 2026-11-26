@@ -95,13 +95,9 @@ supabase secrets set FACEBOOK_APP_ID=... FACEBOOK_APP_SECRET=... FACEBOOK_GRAPH_
    `facebook_access_token_<account-id>` — never in a public table.
 3. At publish time the worker asks `/me/accounts` for a fresh Page access token.
    Text posts go to `/{page-id}/feed`. Image posts upload the photo to
-   `/{page-id}/photos` with `published=false` **and** `temporary=true`, then
-   create a `/{page-id}/feed` post with `attached_media[0]` — this keeps it a
-   normal Page post with an image instead of a photo-tab story.
-   `temporary=true` is what keeps the upload out of the Page's photo album, so
-   the image does not additionally show up in the Page's **Photos** tab. Meta
-   deletes temporary uploads after about 24 hours, which is fine because the
-   feed post is created in the same publish attempt.
+   `/{page-id}/photos` with `published=false`, then create a `/{page-id}/feed`
+   post with `attached_media[0]` — this keeps it a normal Page post with an
+   image instead of a photo-tab story.
 4. Each attempt is written to `publishing_logs` with HTTP status and error code.
 5. Retries, backoff and the every-minute scheduler are the same ones used for
    LinkedIn.
