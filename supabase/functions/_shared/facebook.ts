@@ -253,13 +253,20 @@ export async function fetchPageAccessToken(
 }
 
 /**
- * Upload a photo to the Page as an *unpublished* photo and return its id.
+ * Upload a photo to the Page as a *temporary, unpublished* photo and return its
+ * id.
  *
  * Posting straight to `/{page-id}/photos` with `published=true` creates a photo
  * story: Facebook files it under the Page's Photos tab as an image rather than
  * a regular post in the feed. Uploading first and then attaching the photo to a
  * `/feed` post (see publishFeedPost) produces a normal Page post that happens
  * to include a photo — which is what a scheduler post should look like.
+ *
+ * `temporary=true` is required for photos that are uploaded ahead of being
+ * used: Meta keeps an unpublished photo out of the Page's photo album only when
+ * it is marked temporary, and deletes temporary uploads after ~24h. Without it
+ * the upload stays in the album, so the image shows up in the Page's Photos tab
+ * even though the visible story is a regular feed post.
  */
 async function uploadPagePhoto(
   input: FacebookPublishInput,
@@ -268,6 +275,7 @@ async function uploadPagePhoto(
   const fetchImpl = input.fetchImpl ?? fetch;
   const form = new FormData();
   form.set("published", "false");
+  form.set("temporary", "true");
   form.set("access_token", pageToken);
   form.set(
     "source",

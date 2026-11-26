@@ -287,9 +287,11 @@ describe("publishToFacebookPage", () => {
     expect(calls[1][0]).toBe("https://graph.facebook.com/v23.0/104231998/photos");
     expect(calls[2][0]).toBe("https://graph.facebook.com/v23.0/104231998/feed");
 
-    // Step 1: upload the image as unpublished, without a message.
+    // Step 1: upload the image as an unpublished, temporary upload, without a
+    // message. `temporary=true` keeps it out of the Page's Photos album.
     const form = calls[1][1].body as FormData;
     expect(form.get("published")).toBe("false");
+    expect(form.get("temporary")).toBe("true");
     expect(form.get("message")).toBeNull();
     expect(form.get("access_token")).toBe("page-token");
     const source = form.get("source");
